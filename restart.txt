@@ -1,0 +1,8 @@
+@bot.command()
+async def restart(ctx):
+    OWNER_ID = 251443311741501443  # Remplace par ton Discord ID
+    if ctx.author.id != OWNER_ID:
+        await ctx.send("Tu n'as pas la permission pour faire ça.")
+        return
+    await ctx.send("Redémarrage du bot...")
+    await bot.close()
