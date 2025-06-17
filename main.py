@@ -562,6 +562,68 @@ async def twitch_check_loop():
     if twitch_monitor:
         await twitch_monitor.check_stream()
 
+# --- Twitter monitoring ---
+TWITTER_USER_URL = f"https://api.twitter.com/2/users/by/username/{TWITTER_USERNAME}"
+
+twitter_headers = {
+    "Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"
+}
+
+async def fetch_twitter_user_id():
+    async with ClientSession() as session:
+        async with session.get(TWITTER_USER_URL, headers=twitter_headers) as resp:
+            if resp.status != 200:
+                print(f"[Twitter] Erreur récupération user ID: {resp.status}")
+                return None
+            data_resp = await resp.json()
+            return data_resp.get("data", {}).get("id")
+
+async def fetch_latest_tweets(user_id, since_id=None):
+    url = f"https://api.twitter.com/2/users/{user_id}/tweets"
+    params = {
+        "max_results": 5,
+        "tweet.fields": "created_at"
+    }
+    if since_id:
+        params["since_id"] = since_id
+    async with ClientSession() as session:
+        async with session.get(url, headers=twitter_headers, params=params) as resp:
+            if resp.status != 200:
+                print(f"[Twitter] Erreur récupération tweets: {resp.status}")
+                return []
+            data_resp = await resp.json()
+            return data_resp.get("data", [])
+
+@tasks.loop(minutes=2)
+async def twitter_check_loop():
+    channel = bot.get_channel(TWITTER_ALERT_CHANNEL_ID)
+    if channel is None:
+        print("[Twitter] Channel Twitter introuvable.")
+        return
+    
+    user_id = await fetch_twitter_user_id()
+    if not user_id:
+        print("[Twitter] Impossible de récupérer l'ID utilisateur.")
+        return
+
+    last_tweet_id = None
+    if data.get("twitter_posted_tweets"):
+        last_tweet_id = max(data["twitter_posted_tweets"])
+
+    tweets = await fetch_latest_tweets(user_id, since_id=last_tweet_id)
+    if not tweets:
+        return
+
+    new_tweets = [t for t in tweets if t["id"] not in data.get("twitter_posted_tweets", [])]
+
+    for tweet in reversed(new_tweets):  # du plus ancien au plus récent
+        tweet_url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet['id']}"
+        created = tweet["created_at"]
+        content = tweet.get("text", "")
+        await channel.send(f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({created}):\n{content}\n{tweet_url}")
+        data.setdefault("twitter_posted_tweets", []).append(tweet["id"])
+        save_data(data)
+
 # --- Événements Discord ---
 @bot.event
 async def on_ready():
@@ -576,6 +638,11 @@ async def on_ready():
         except Exception as e:
             print(f"❌ Erreur lors de l'envoi dans le salon de logs : {e}")
 
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+    await envoyer_guide_tuto()
 
     global twitch_monitor
     if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
