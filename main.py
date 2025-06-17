@@ -86,6 +86,15 @@ async def log_to_discord(message: str):
             await channel.send(f"📌 {message}")
         except Exception as e:
             logging.error(f"Erreur lors de l'envoi du log Discord : {e}")
+            
+async def log_to_discord(message: str):
+    print(f"[LOG] {message}")  # debug console
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel:
+        try:
+            await channel.send(f"📌 {message}")
+        except Exception as e:
+            logging.error(f"Erreur lors de l'envoi du log Discord : {e}")
 
 # --- Texte règlement ---
 reglement_texte = """
