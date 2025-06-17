@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 import json
 import random
+from urllib.parse import urlencode
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -86,7 +87,7 @@ async def log_to_discord(message: str):
         except Exception as e:
             logging.error(f"Erreur lors de l'envoi du log Discord : {e}")
 
-
+# --- Texte règlement ---
 reglement_texte = """
 📜 **・Règlement du serveur Discord**
 
@@ -184,12 +185,7 @@ En restant sur **Titise Arena**, tu acceptes ces règles.
 — *L’équipe Titise Arena*
 """
 
-
 # --- Interface bouton règlement ---
-from urllib.parse import urlencode
-
-from urllib.parse import urlencode
-
 class ReglementView(ui.View):
     def __init__(self, twitch_client_id, redirect_uri):
         super().__init__(timeout=None)
@@ -202,11 +198,9 @@ class ReglementView(ui.View):
         guild = interaction.guild
         role = guild.get_role(MEMBRE_ROLE_ID)
 
-        # Donne le rôle "Membre" immédiatement
         if role and role not in member.roles:
             await member.add_roles(role)
 
-        # Crée le lien Twitch OAuth2
         discord_id = member.id
         query = urlencode({
             "client_id": self.twitch_client_id,
@@ -217,7 +211,6 @@ class ReglementView(ui.View):
         })
         twitch_url = f"https://id.twitch.tv/oauth2/authorize?{query}"
 
-        # Message éphémère avec lien
         await interaction.response.send_message(
             content=(
                 "✅ Tu as accepté le règlement !\n\n"
@@ -237,13 +230,10 @@ async def reglement(ctx):
         color=discord.Color.blue()
     )
 
-    # Ajout des paramètres Twitch à la vue
     view = ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI"))
-
     msg = await ctx.send(embed=embed, view=view)
     data["reglement_message_id"] = msg.id
     save_data(data)
-
 
 # --- Commandes modération ---
 @bot.command(name="kick")
@@ -294,14 +284,15 @@ async def restart(ctx):
     await ctx.send("Redémarrage du bot...")
     await bot.close()
     os.execv(sys.executable, ['python'] + sys.argv)
-    
+
+# --- Envoi guide tutoriel ---
 async def envoyer_guide_tuto():
     channel = bot.get_channel(GUIDE_CHANNEL_ID)
     if not channel:
         logging.warning("Salon guide introuvable.")
         return
 
-    guide_msg_id = data.get("guide_message_id")  # ✅ Remis au bon niveau
+    guide_msg_id = data.get("guide_message_id")
 
     if guide_msg_id:
         try:
@@ -332,7 +323,6 @@ async def envoyer_guide_tuto():
         data["guide_message_id"] = msg.id
         save_data(data)
         logging.info("Guide envoyé, épinglé et ID sauvegardé.")
-
 
 # --- Commande squad + bouton rejoindre ---
 class SquadJoinButton(ui.View):
@@ -385,7 +375,6 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
     vc_name = f"{game_name} - Squad {ctx.author.display_name}"
     vc = await ctx.guild.create_voice_channel(name=vc_name, category=category, user_limit=max_players)
 
-    # Déplacer l’auteur dans le salon vocal créé
     try:
         await ctx.author.move_to(vc)
     except Exception as e:
@@ -403,11 +392,9 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
         msg = await announce_channel.send(embed=embed, view=view)
         view.message = msg
     else:
-        # fallback si le channel n'existe pas
         msg = await ctx.send(embed=embed, view=view)
         view.message = msg
 
-    # Envoi message privé à l'auteur pour confirmer la création
     try:
         await ctx.author.send(f"Ta squad pour {game_name} est prête ! Salon vocal : {vc.name}")
     except:
@@ -416,7 +403,7 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
 # --- Suppression des salons vocaux vides ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
-    guild = bot.guilds[0]  # Attention, si tu es dans plusieurs serveurs, adapter ici
+    guild = bot.guilds[0]  # Si plusieurs serveurs, adapter ici
     category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
     if not category:
         return
@@ -437,7 +424,6 @@ async def on_message(message):
     if message.guild is None:
         return
 
-    # Ajouter XP
     user_id = str(message.author.id)
     xp = data.get("xp", {})
     current_xp = xp.get(user_id, 0)
@@ -454,7 +440,7 @@ async def xp(ctx, member: discord.Member = None):
     user_xp = xp.get(str(member.id), 0)
     await ctx.send(f"{member.display_name} a {user_xp} points d'XP.")
 
-# --- Giveaway (simplifié) ---
+# --- Giveaway simplifié ---
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def giveaway(ctx, duration: int, *, prize: str):
@@ -463,7 +449,6 @@ async def giveaway(ctx, duration: int, *, prize: str):
     msg = await ctx.send(embed=embed)
     await msg.add_reaction("🎉")
 
-    # Sauvegarde
     giveaway_id = str(msg.id)
     data["giveaways"][giveaway_id] = {
         "channel_id": ctx.channel.id,
@@ -473,7 +458,6 @@ async def giveaway(ctx, duration: int, *, prize: str):
     }
     save_data(data)
 
-# Tâche de check des giveaways finis
 @tasks.loop(seconds=30)
 async def check_giveaways():
     now = datetime.now(UTC)
@@ -492,7 +476,7 @@ async def check_giveaways():
                 to_remove.append(gid)
                 continue
 
-            users = set()
+            users = []
             for reaction in msg.reactions:
                 if str(reaction.emoji) == "🎉":
                     users = await reaction.users().flatten()
@@ -522,7 +506,7 @@ async def guide(ctx):
     except FileNotFoundError:
         await ctx.send("Image non trouvée. Assure-toi qu'elle est bien dans le dossier `assets`.")
 
-# --- Twitch API monitoring simplifié (à compléter) ---
+# --- Twitch monitoring simplifié ---
 class TwitchMonitor:
     def __init__(self, client_id, client_secret, streamer_login, alert_channel_id):
         self.client_id = client_id
@@ -560,7 +544,6 @@ class TwitchMonitor:
             stream_data = data.get("data")
             channel = bot.get_channel(self.alert_channel_id)
             if stream_data:
-                # Stream en direct
                 if not self.last_stream_live:
                     self.last_stream_live = True
                     title = stream_data[0].get("title")
@@ -580,11 +563,12 @@ async def twitch_check_loop():
 @bot.event
 async def on_ready():
     print(f"Connecté en tant que {bot.user} ({bot.user.id})")
+    print(f"Message content intent enabled? {bot.intents.message_content}")
+    print(f"Members intent enabled? {bot.intents.members}")
     cleanup_empty_vcs.start()
     check_giveaways.start()
     twitch_check_loop.start()
-
-    await envoyer_guide_tuto()  # 🔥 Envoie le guide si nécessaire
+    await envoyer_guide_tuto()
 
     global twitch_monitor
     if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
@@ -593,7 +577,6 @@ async def on_ready():
             TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID
         )
 
-# --- Logs des événements (rejoins, quitte, messages, etc.) ---
 @bot.event
 async def on_member_join(member):
     await log_to_discord(f"👋 {member.mention} a rejoint le serveur.")
@@ -626,7 +609,6 @@ async def on_message_edit(before, after):
             f"Avant : `{before.content}`\nAprès : `{after.content}`"
         )
 
-
 # --- Webhook HTTP simple ---
 async def handle_webhook(request):
     try:
@@ -636,9 +618,7 @@ async def handle_webhook(request):
     except Exception as e:
         return web.Response(status=400, text=str(e))
 
-from urllib.parse import urlencode
-
-# Commande !link
+# --- Commande !link ---
 @bot.command()
 async def link(ctx):
     discord_id = ctx.author.id
@@ -651,7 +631,8 @@ async def link(ctx):
     })
     url = f"https://id.twitch.tv/oauth2/authorize?{query}"
     await ctx.send(f"Connecte ton compte Twitch ici : {url}")
- # Route de callback OAuth2 Twitch
+
+# --- Route de callback OAuth2 Twitch ---
 async def twitch_callback(request):
     try:
         params = request.rel_url.query
@@ -662,7 +643,6 @@ async def twitch_callback(request):
 
         discord_id = int(state)
 
-        # Obtenir le token
         token_url = "https://id.twitch.tv/oauth2/token"
         payload = {
             "client_id": TWITCH_CLIENT_ID,
@@ -680,7 +660,6 @@ async def twitch_callback(request):
         if not access_token:
             return web.Response(status=400, text="Impossible d’obtenir un token.")
 
-        # Obtenir infos utilisateur Twitch
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Client-Id": TWITCH_CLIENT_ID
@@ -694,14 +673,12 @@ async def twitch_callback(request):
         twitch_login = twitch_user["login"]
         twitch_id = twitch_user["id"]
 
-        # Obtenir l’ID du streamer
         streamer_url = f"https://api.twitch.tv/helix/users?login={TWITCH_STREAMER_LOGIN}"
         async with ClientSession() as session:
             async with session.get(streamer_url, headers=headers) as resp:
                 result = await resp.json()
                 streamer_id = result["data"][0]["id"]
 
-        # Vérifie si le user suit le streamer
         check_url = f"https://api.twitch.tv/helix/users/follows?from_id={twitch_id}&to_id={streamer_id}"
         async with ClientSession() as session:
             async with session.get(check_url, headers=headers) as follow_resp:
@@ -727,29 +704,19 @@ async def twitch_callback(request):
     except Exception as e:
         return web.Response(status=500, text=f"Erreur : {str(e)}")
 
-
-
-   
+# --- Application web aiohttp ---
 app = web.Application()
 app.router.add_get("/auth/twitch/callback", twitch_callback)
 app.router.add_post("/webhook", handle_webhook)
 
-def run_webhook_app():
-    runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
-    loop.run_until_complete(site.start())
-    print(f"Webhook HTTP lancé sur http://{WEBHOOK_HOST}:{WEBHOOK_PORT}")
-
-# --- Lancement du bot et du webhook ---
+# --- Lancement du bot et serveur web ---
 async def main():
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
     await site.start()
     print(f"Webhook HTTP lancé sur http://{WEBHOOK_HOST}:{WEBHOOK_PORT}")
-    
+
     await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
