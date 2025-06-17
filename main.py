@@ -408,6 +408,11 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
         await ctx.author.send(f"Ta squad pour {game_name} est prête ! Salon vocal : {vc.name}")
     except:
         pass
+        
+     
+async def testlog(ctx):
+    await log_to_discord("Test log: la commande fonctionne.")
+    await ctx.send("Log envoyé !")
 
 # --- Suppression des salons vocaux vides ---
 @tasks.loop(minutes=1)
