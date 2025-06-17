@@ -80,15 +80,16 @@ data = load_data()
 
 # --- Fonction de log unique ---
 async def log_to_discord(message: str):
-    print(f"[LOG] {message}")  # console log
+    print(f"[LOG] Tentative d'envoi dans le salon de logs: {message}")  # debug console
     channel = bot.get_channel(LOG_CHANNEL_ID)
-    if not channel:
-        print(f"[LOG] Salon avec l'ID {LOG_CHANNEL_ID} introuvable.")
+    if channel is None:
+        print("[ERROR] Le salon de logs est introuvable. Vérifie LOG_CHANNEL_ID.")
         return
     try:
         await channel.send(f"📌 {message}")
+        print("[LOG] Message envoyé avec succès dans le salon de logs.")
     except Exception as e:
-        print(f"[LOG] Erreur lors de l'envoi du message : {e}")
+        print(f"[ERROR] Erreur lors de l'envoi du message de log : {e}")
 
 # --- Texte règlement ---
 reglement_texte = """
@@ -565,12 +566,16 @@ async def twitch_check_loop():
 @bot.event
 async def on_ready():
     print(f"Connecté en tant que {bot.user} ({bot.user.id})")
-    print(f"Message content intent enabled? {bot.intents.message_content}")
-    print(f"Members intent enabled? {bot.intents.members}")
-    cleanup_empty_vcs.start()
-    check_giveaways.start()
-    twitch_check_loop.start()
-    await envoyer_guide_tuto()
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel is None:
+        print("❌ Salon de logs introuvable, vérifie LOG_CHANNEL_ID !")
+    else:
+        print(f"✅ Salon de logs trouvé : {channel.name} ({channel.id})")
+        try:
+            await channel.send("✅ Le bot est connecté et prêt !")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'envoi dans le salon de logs : {e}")
+
 
     global twitch_monitor
     if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
