@@ -54,7 +54,6 @@ WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "0.0.0.0")
 WEBHOOK_PORT = int(os.getenv("PORT", 8080))
 
 UTC = timezone.utc
-
 DATA_FILE = "data.json"
 
 # --- Gestion persistante ---
@@ -79,22 +78,17 @@ def save_data(data):
 
 data = load_data()
 
+# --- Fonction de log unique ---
 async def log_to_discord(message: str):
+    print(f"[LOG] {message}")  # console log
     channel = bot.get_channel(LOG_CHANNEL_ID)
-    if channel:
-        try:
-            await channel.send(f"📌 {message}")
-        except Exception as e:
-            logging.error(f"Erreur lors de l'envoi du log Discord : {e}")
-            
-async def log_to_discord(message: str):
-    print(f"[LOG] {message}")  # debug console
-    channel = bot.get_channel(LOG_CHANNEL_ID)
-    if channel:
-        try:
-            await channel.send(f"📌 {message}")
-        except Exception as e:
-            logging.error(f"Erreur lors de l'envoi du log Discord : {e}")
+    if not channel:
+        print(f"[LOG] Salon avec l'ID {LOG_CHANNEL_ID} introuvable.")
+        return
+    try:
+        await channel.send(f"📌 {message}")
+    except Exception as e:
+        print(f"[LOG] Erreur lors de l'envoi du message : {e}")
 
 # --- Texte règlement ---
 reglement_texte = """
@@ -238,7 +232,6 @@ async def reglement(ctx):
         description=reglement_texte,
         color=discord.Color.blue()
     )
-
     view = ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI"))
     msg = await ctx.send(embed=embed, view=view)
     data["reglement_message_id"] = msg.id
@@ -408,15 +401,12 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
         await ctx.author.send(f"Ta squad pour {game_name} est prête ! Salon vocal : {vc.name}")
     except:
         pass
-        
-     
-async def testlog(ctx):
-    await log_to_discord("Test log: la commande fonctionne.")
-    await ctx.send("Log envoyé !")
 
 # --- Suppression des salons vocaux vides ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
+    if not bot.guilds:
+        return
     guild = bot.guilds[0]  # Si plusieurs serveurs, adapter ici
     category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
     if not category:
@@ -433,9 +423,7 @@ async def cleanup_empty_vcs():
 # --- XP simple système ---
 @bot.event
 async def on_message(message):
-    if message.author.bot:
-        return
-    if message.guild is None:
+    if message.author.bot or not message.guild:
         return
 
     user_id = str(message.author.id)
@@ -509,9 +497,9 @@ async def check_giveaways():
     if to_remove:
         save_data(data)
 
+# --- Commande guide ---
 @bot.command()
 async def guide(ctx):
-    """Affiche le guide pour créer une squad"""
     image_path = "assets/squad-guide.png"
     try:
         with open(image_path, "rb") as f:
