@@ -198,7 +198,6 @@ class ReglementView(ui.View):
         await interaction.response.send_message(f"✅ Règlement OK! {twitch_url}", ephemeral=True)
 
 # Enregistrement de la vue du règlement pour persistance
-bot.add_view(ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI")))
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def reglement(ctx):
@@ -283,12 +282,6 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     view.message = msg
 
 # --- Tâches récurrentes et autres évents / main() inchangés ---
-# (Le reste du script, y compris on_ready, tâches, TwitchMonitor, webhook, etc.)
-
-
-
-
-# --- Tâches récurrentes ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
     guild = bot.guilds[0] if bot.guilds else None
@@ -427,6 +420,10 @@ async def on_ready():
     ch = bot.get_channel(LOG_CHANNEL_ID)
     if ch:
         await ch.send("✅ Bot connecté et prêt !")
+        
+    # Enregistrement de la vue du règlement pour persistance des interactions
+    bot.add_view(ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI")))
+
 
     # Démarrage des tâches
     cleanup_empty_vcs.start()
