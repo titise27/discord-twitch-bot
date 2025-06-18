@@ -379,7 +379,12 @@ async def twitter_check_loop():
         if tw["id"] not in data.get("twitter_posted_tweets", []):
             url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
             content = tw.get("text", "")
+            # Fix multi-line f-string by including newlines within the string literal
             await ch.send(f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):
+{content}
+{url}")
+            data.setdefault("twitter_posted_tweets", []).append(tw["id"])
+            save_data(data)f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):
 {content}
 {url}")
             data.setdefault("twitter_posted_tweets", []).append(tw["id"])
