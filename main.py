@@ -59,6 +59,10 @@ WEBHOOK_PORT = int(os.getenv("PORT", 8080))
 UTC = timezone.utc
 DATA_FILE = "data.json"
 
+# --- Variables globales ---
+twitch_monitor = None
+twitter_user_id = None
+
 # --- Gestion persistante ---
 def load_data():
     if os.path.exists(DATA_FILE):
