@@ -206,6 +206,7 @@ async def clear(ctx, amount: int = 10):
 
 # --- Liste des salons vocaux créés dynamiquement ---
 created_vcs = set()
+created_vc_names = set()
 
 # --- Commande squad ---
 class SquadJoinButton(ui.View):
@@ -235,17 +236,27 @@ class SquadJoinButton(ui.View):
 async def squad(ctx, max_players: int = None, *, game_name: str = None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
+
     category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
+    channel_name = f"{game_name} - Squad {ctx.author.display_name}"
+
+    # Vérifie si un salon avec le même nom a déjà été créé récemment
+    if channel_name in created_vc_names:
+        return await ctx.send("Un salon pour cette squad existe déjà ou vient d'être créé. Merci de patienter une minute.")
+
     vc = await ctx.guild.create_voice_channel(
-        name=f"{game_name} - Squad {ctx.author.display_name}",
+        name=channel_name,
         category=category,
         user_limit=max_players
     )
-    created_vcs.add(vc.id)  # Marquer ce salon comme temporaire
+    created_vcs.add(vc.id)
+    created_vc_names.add(channel_name)
+
     try:
         await ctx.author.move_to(vc)
     except:
         pass
+
     view = SquadJoinButton(vc, max_players)
     embed = discord.Embed(
         title=vc.name,
@@ -287,6 +298,7 @@ async def cleanup_empty_vcs():
     for vc_id in list(created_vcs):
         vc = guild.get_channel(vc_id)
         if vc and len(vc.members) == 0:
+            created_vc_names.discard(vc.name)
             await vc.delete()
             created_vcs.remove(vc_id)
 
@@ -303,6 +315,7 @@ async def on_ready():
     if not cleanup_old_squad_messages.is_running():
         cleanup_old_squad_messages.start()
     await start_web_app()
+
 
 # --- Règlement ---
 # --- Texte règlement ---
