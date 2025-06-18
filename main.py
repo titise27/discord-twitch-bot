@@ -379,6 +379,25 @@ async def twitter_check_loop():
         if tw["id"] not in data.get("twitter_posted_tweets", []):
             url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
             content = tw.get("text", "")
+            # Envoi du tweet avec sauts de ligne sécurisés
+            message = (
+                f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):
+"
+                f"{content}
+"
+                f"{url}"
+            )
+            await ch.send(message)
+            data.setdefault("twitter_posted_tweets", []).append(tw["id"])
+            save_data(data)
+    # Fin de la boucle twitter_check_loop
+    return
+    last_id = max(data.get("twitter_posted_tweets", [0])) if data.get("twitter_posted_tweets") else None
+    tweets = await fetch_latest_tweets(twitter_user_id, since_id=last_id)
+    for tw in reversed(tweets):
+        if tw["id"] not in data.get("twitter_posted_tweets", []):
+            url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
+            content = tw.get("text", "")
             # Envoi du tweet avec sauts de ligne dans une seule f-string
             message = (f"🐦 Nouveau tweet de {TWITTER_USERNAME} (" 
                        f"{tw['created_at']})
