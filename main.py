@@ -150,6 +150,7 @@ async def envoyer_guide_tuto():
             pass
         data["guide_message_id"] = None
         save_data(data)
+
     path = "assets/squad-guide.png"
     if not os.path.exists(path):
         return
@@ -267,7 +268,6 @@ En restant sur **Titise Arena**, tu acceptes ces règles.
 
 — *L’équipe Titise Arena*
 """
-
 class ReglementView(ui.View):
     def __init__(self, client_id, redirect_uri):
         super().__init__(timeout=None)
@@ -276,19 +276,18 @@ class ReglementView(ui.View):
 
     @ui.button(label="✅ J'accepte", style=discord.ButtonStyle.green, custom_id="accept_reglement")
     async def accept(self, interaction: discord.Interaction, button: ui.Button):
-        member = interaction.user
         role = interaction.guild.get_role(MEMBRE_ROLE_ID)
-        if role and role not in member.roles:
-            await member.add_roles(role)
+        if role and role not in interaction.user.roles:
+            await interaction.user.add_roles(role)
         query = urlencode({
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
             "scope": "user:read:email",
-            "state": str(member.id)
+            "state": str(interaction.user.id)
         })
         twitch_url = f"https://id.twitch.tv/oauth2/authorize?{query}"
-        await interaction.response.send_message(f"✅ Règlement accepté !\n{twitch_url}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Règlement accepté !\n\n🔗 Lien Twitch : {twitch_url}", ephemeral=True)
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -304,19 +303,19 @@ async def reglement(ctx):
 @commands.has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason: str = None):
     await member.kick(reason=reason)
-    await ctx.send(f"👢 {member} expulsé. Raison: {reason or 'Non spécifiée'}")
+    await ctx.send(f"👢 {member} expulsé. Raison : {reason or 'Non spécifiée'}")
 
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, *, reason: str = None):
     await member.ban(reason=reason)
-    await ctx.send(f"🔨 {member} banni. Raison: {reason or 'Non spécifiée'}")
+    await ctx.send(f"🔨 {member} banni. Raison : {reason or 'Non spécifiée'}")
 
 @bot.command(name="clear")
 @commands.has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 10):
     if amount < 1 or amount > 100:
-        return await ctx.send("Nombre entre 1 et 100.")
+        return await ctx.send("Le nombre doit être entre 1 et 100.")
     deleted = await ctx.channel.purge(limit=amount)
     await ctx.send(f"🧹 {len(deleted)} messages supprimés.", delete_after=5)
 
@@ -333,21 +332,21 @@ async def ping(ctx):
 @bot.command()
 async def restart(ctx):
     if ctx.author.id != OWNER_ID:
-        return await ctx.send("Pas la permission.")
-    await ctx.send("Redémarrage...")
+        return await ctx.send("Tu n'as pas la permission.")
+    await ctx.send("Redémarrage du bot...")
     await bot.close()
     os.execv(sys.executable, ['python'] + sys.argv)
 
-# --- Commande guide visuel ---
+# --- Commande guide simple ---
 @bot.command()
 async def guide(ctx):
     path = "assets/squad-guide.png"
     if os.path.exists(path):
         await ctx.send(file=discord.File(path))
     else:
-        await ctx.send("Image introuvable.")
+        await ctx.send("Image non trouvée.")
 
-# --- Création et gestion des squads ---
+# --- Squad management ---
 class SquadJoinButton(ui.View):
     def __init__(self, vc, max_members):
         super().__init__(timeout=None)
@@ -359,11 +358,12 @@ class SquadJoinButton(ui.View):
     async def join(self, interaction: discord.Interaction, button: ui.Button):
         member = interaction.user
         if member.voice and member.voice.channel == self.vc:
-            return await interaction.response.send_message("Déjà dans la squad.", ephemeral=True)
+            return await interaction.response.send_message("Tu es déjà dans la squad.", ephemeral=True)
         if len(self.vc.members) >= self.max_members:
             button.disabled = True
-            if self.message: await self.message.edit(view=self)
-            return await interaction.response.send_message("Squad pleine.", ephemeral=True)
+            if self.message:
+                await self.message.edit(view=self)
+            return await interaction.response.send_message("Cette squad est pleine.", ephemeral=True)
         await member.move_to(self.vc)
         await interaction.response.send_message(f"Tu as rejoint {self.vc.name} !", ephemeral=True)
         if len(self.vc.members) >= self.max_members:
@@ -373,21 +373,28 @@ class SquadJoinButton(ui.View):
 @bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
-        return await ctx.send("Usage: !squad <nb> <jeu>")
+        return await ctx.send("Usage: !squad <nombre> <jeu>")
     category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
-    vc = await ctx.guild.create_voice_channel(f"{game_name} - Squad {ctx.author.display_name}", category=category, user_limit=max_players)
+    vc = await ctx.guild.create_voice_channel(
+        name=f"{game_name} - Squad {ctx.author.display_name}",
+        category=category,
+        user_limit=max_players
+    )
     try:
         await ctx.author.move_to(vc)
     except:
         pass
     view = SquadJoinButton(vc, max_players)
-    embed = discord.Embed(title=vc.name, description=f"Jeu: **{game_name}**\nMax: {max_players}", color=discord.Color.green())
-    channel = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-    msg = await (channel or ctx).send(embed=embed, view=view)
+    embed = discord.Embed(
+        title=vc.name,
+        description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
+        color=discord.Color.green()
+    )
+    announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
+    msg = await (announce or ctx).send(embed=embed, view=view)
     view.message = msg
 
 # --- Tâches récurrentes ---
-# --- Nettoyage des salons vocaux vides toutes les minutes ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
     guild = bot.guilds[0] if bot.guilds else None
@@ -400,7 +407,6 @@ async def cleanup_empty_vcs():
         if not vc.members:
             await vc.delete()
 
-# --- Gestion des giveaways toutes les 30 s ---
 @tasks.loop(seconds=30)
 async def check_giveaways():
     now = datetime.now(UTC)
@@ -427,13 +433,11 @@ async def check_giveaways():
             data["giveaways"].pop(gid, None)
     save_data(data)
 
-# --- Vérification Twitch every minute ---
 @tasks.loop(minutes=1)
 async def twitch_check_loop():
     if twitch_monitor:
         await twitch_monitor.check_stream()
 
-# --- Vérification Twitter every 2 minutes ---
 @tasks.loop(minutes=2)
 async def twitter_check_loop():
     ch = bot.get_channel(TWITTER_ALERT_CHANNEL_ID)
@@ -458,112 +462,30 @@ class TwitchMonitor:
 
     async def get_token(self):
         url = "https://id.twitch.tv/oauth2/token"
-        params = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "grant_type": "client_credentials"
-        }
+        params = {"client_id": self.client_id, "client_secret": self.client_secret, "grant_type": "client_credentials"}
         async with self.session.post(url, params=params) as r:
-            data = await r.json()
-            self.token = data.get("access_token")
-            self.token_expiry = datetime.now() + timedelta(seconds=data.get("expires_in", 3600))
+            d = await r.json()
+            self.token = d.get("access_token")
+            self.token_expiry = datetime.now() + timedelta(seconds=d.get("expires_in", 3600))
 
     async def check_stream(self):
         if not self.token or datetime.now() >= self.token_expiry:
             await self.get_token()
-        headers = {
-            "Client-ID": self.client_id,
-            "Authorization": f"Bearer {self.token}"
-        }
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
         url = f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}"
         async with self.session.get(url, headers=headers) as r:
             res = await r.json()
-            streams = res.get("data")
+            sd = res.get("data")
             ch = bot.get_channel(self.alert_channel_id)
-            if streams and not self.last_live:
+            if sd and not self.last_live:
                 self.last_live = True
-                title = streams[0].get("title")
+                title = sd[0].get("title")
                 await ch.send(f"🔴 {self.streamer_login} est en live : **{title}** https://twitch.tv/{self.streamer_login}")
-            elif not streams:
+            elif not sd:
                 self.last_live = False
 
 # --- Webhook & OAuth callback ---
 async def handle_webhook(request):
     try:
         payload = await request.json()
-        logging.info(f"Webhook reçu : {payload}")
-        return web.Response(text="OK")
-    except Exception as e:
-        return web.Response(status=400, text=str(e))
-
-async def twitch_callback(request):
-    params = request.rel_url.query
-    code, state = params.get("code"), params.get("state")
-    if not code or not state:
-        return web.Response(status=400, text="Params manquants")
-    token_payload = {
-        "client_id": TWITCH_CLIENT_ID,
-        "client_secret": TWITCH_CLIENT_SECRET,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": os.getenv("REDIRECT_URI")
-    }
-    async with ClientSession() as session:
-        async with session.post("https://id.twitch.tv/oauth2/token", data=token_payload) as resp:
-            tok = await resp.json()
-    access = tok.get("access_token")
-    if not access:
-        return web.Response(status=400, text="Pas de token")
-    headers = {"Authorization": f"Bearer {access}", "Client-Id": TWITCH_CLIENT_ID}
-    async with ClientSession() as session:
-        async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
-            ud = await u_resp.json()
-            tu = ud["data"][0]
-    follows_url = f"https://api.twitch.tv/helix/users/follows?from_id={tu['id']}&to_id={TUYOUR_STREAMER_ID}"
-    async with ClientSession() as session:
-        async with session.get(follows_url, headers=headers) as f_resp:
-            fd = await f_resp.json()
-    follows = fd.get("total", 0) > 0
-    guild = bot.guilds[0]
-    member = guild.get_member(int(state))
-    if member and follows:
-        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
-        if role:
-            await member.add_roles(role)
-        data.setdefault("linked_accounts", {})[state] = tu["login"]
-        save_data(data)
-        return web.Response(text="✅ Compte lié et follower détecté")
-    return web.Response(text="✅ Compte lié, pas de follow détecté")
-
-# --- on_ready unique ---
-@bot.event
-async def on_ready():
-    logging.info(f"Connecté : {bot.user} ({bot.user.id})")
-    log_ch = bot.get_channel(LOG_CHANNEL_ID)
-    if log_ch:
-        await log_ch.send("✅ Bot connecté et prêt !")
-    cleanup_empty_vcs.start()
-    check_giveaways.start()
-    twitch_check_loop.start()
-    twitter_check_loop.start()
-    await envoyer_guide_tuto()
-    global twitch_monitor, twitter_user_id
-    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
-        twitch_monitor = TwitchMonitor(TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID)
-    if TWITTER_BEARER_TOKEN and TWITTER_USERNAME:
-        twitter_user_id = await fetch_twitter_user_id()
-
-# --- Démarrage du bot et serveur web ---
-def main():
-    app = web.Application()
-    app.router.add_post("/webhook", handle_webhook)
-    app.router.add_get("/auth/twitch/callback", twitch_callback)
-    runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
-    loop.run_until_complete(bot.start(DISCORD_TOKEN))
-
-if __name__ == "__main__":
-    main()
-
+        logging.info(f"
