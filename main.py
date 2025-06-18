@@ -299,7 +299,7 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 
-@bot.command()
+bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
@@ -331,6 +331,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
         "channel_id": announce.id,
         "max_players": max_players
     }
+    save_data(data)
     save_data(data)
 
 
@@ -540,7 +541,7 @@ async def on_voice_state_update(member, before, after):
                             "👤 Membres :\n" + "\n".join(f"• {m.display_name}" for m in members),
                 color=discord.Color.green()
             )
-            await msg.edit(embed=embed)
-
-if __name__ == "__main__":
-    main()
+            try:
+                await msg.edit(content=None, embed=embed)
+            except:
+                pass
