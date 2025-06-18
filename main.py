@@ -134,6 +134,13 @@ async def on_ready():
             TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
             TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID
         )
+        
+    global twitter_user_id
+        twitter_user_id = await fetch_twitter_user_id()
+    if twitter_user_id:
+        print(f"[Twitter] ID utilisateur récupéré : {twitter_user_id}")
+    else:
+        print("[Twitter] Échec récupération de l'ID Twitter.")
 
 @bot.event
 async def on_member_join(member):
@@ -663,10 +670,11 @@ async def twitter_check_loop():
         print("[Twitter] Channel Twitter introuvable.")
         return
     
-    user_id = await fetch_twitter_user_id()
-    if not user_id:
-        print("[Twitter] Impossible de récupérer l'ID utilisateur.")
+    global twitter_user_id
+    if not twitter_user_id:
+        print("[Twitter] ID utilisateur non initialisé.")
         return
+    user_id = twitter_user_id
 
     last_tweet_id = None
     if data.get("twitter_posted_tweets"):
