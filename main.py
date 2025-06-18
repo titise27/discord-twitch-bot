@@ -209,6 +209,12 @@ created_vcs = set()
 created_vc_names = set()
 squad_lock = asyncio.Lock()  # Ajout d'un verrou
 
+# --- Fonction utilitaire pour envoyer un message dans un salon spécifique ---
+async def log_to_specific_channel(channel_id: int, message: str):
+    channel = bot.get_channel(channel_id)
+    if channel:
+        await channel.send(message)
+
 # --- Commande de test pour les logs ---
 @bot.command()
 async def logtest(ctx):
@@ -316,8 +322,6 @@ async def on_voice_state_update(member, before, after):
             try:
                 await before.channel.delete()
                 logging.info(f"[voice_state] Salon supprimé : {before.channel.name}")
-            except Exception as e:
-                logging.warning(f"Erreur suppression salon vocal : {e}")
             except Exception as e:
                 logging.warning(f"Erreur suppression salon vocal : {e}")
 
