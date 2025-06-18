@@ -552,6 +552,7 @@ async def start_web_app():
 
 # --- Événement prêt du bot ---
 @bot.event
+@bot.event
 async def on_ready():
     global twitch_monitor, twitter_user_id
     logging.info(f"Bot connecté en tant que {bot.user}")
