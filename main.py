@@ -290,7 +290,7 @@ class SquadJoinButton(ui.View):
             button.disabled = True
             await self.message.edit(view=self)
 
-@@bot.command()
+@bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
