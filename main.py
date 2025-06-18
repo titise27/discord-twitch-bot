@@ -233,6 +233,29 @@ async def logtest(ctx):
     except Exception as e:
         await ctx.send(f"❌ Erreur : {e}")
 
+# --- Logs d'événements ---
+@bot.event
+async def on_member_join(member):
+    await log_to_specific_channel(LOG_ARRIVANTS_CHANNEL_ID, f"👤 Nouveau membre : {member.mention} a rejoint le serveur.")
+
+@bot.event
+async def on_member_update(before, after):
+    if before.roles != after.roles:
+        added = [r.name for r in after.roles if r not in before.roles]
+        removed = [r.name for r in before.roles if r not in after.roles]
+        msg = f"🔄 Mise à jour des rôles pour {after.mention} :"
+        if added:
+            msg += f"\n➕ Ajoutés : {', '.join(added)}"
+        if removed:
+            msg += f"\n➖ Retirés : {', '.join(removed)}"
+        await log_to_specific_channel(LOG_CHANNEL_ID, msg)
+
+@bot.event
+async def on_guild_channel_update(before, after):
+    if before.name != after.name:
+        msg = f"✏️ Salon renommé : `{before.name}` → `{after.name}`"
+        await log_to_specific_channel(LOG_CHANNEL_UPDATE_CHANNEL_ID, msg)
+
 # --- Flag pour éviter les doublons dans on_ready ---
 on_ready_executed = False
 
