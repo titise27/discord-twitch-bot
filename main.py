@@ -204,7 +204,7 @@ async def clear(ctx, amount: int = 10):
     deleted = await ctx.channel.purge(limit=amount)
     await ctx.send(f"🧹 {len(deleted)} messages supprimés.", delete_after=5)
 
-# --- Squad ---
+# --- Commande squad ---
 class SquadJoinButton(ui.View):
     def __init__(self, vc, max_members):
         super().__init__(timeout=None)
@@ -229,7 +229,7 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 @bot.command()
-async def squad(ctx, max_players: int=None, *, game_name: str=None):
+async def squad(ctx, max_players: int = None, *, game_name: str = None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
     category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
@@ -238,6 +238,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
         category=category,
         user_limit=max_players
     )
+    created_vcs.add(vc.id)  # Marquer ce salon comme temporaire
     try:
         await ctx.author.move_to(vc)
     except:
@@ -251,8 +252,39 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
     msg = await (announce or ctx).send(embed=embed, view=view)
     view.message = msg
-    data.setdefault("squad_messages", []).append({"message_id": msg.id, "timestamp": datetime.utcnow().isoformat()})
+    data.setdefault("squad_messages", []).append({
+        "message_id": msg.id,
+        "timestamp": datetime.utcnow().isoformat()
+    })
     save_data(data)
+
+# --- Suppression automatique des messages de squad après 24h ---
+@tasks.loop(hours=1)
+async def cleanup_old_squad_messages():
+    now = datetime.utcnow()
+    announce_ch = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
+    for entry in list(data.get("squad_messages", [])):
+        message_id = entry.get("message_id")
+        timestamp = datetime.fromisoformat(entry.get("timestamp"))
+        if (now - timestamp).total_seconds() >= 86400:
+            try:
+                msg = await announce_ch.fetch_message(message_id)
+                await msg.delete()
+            except:
+                pass
+            data["squad_messages"].remove(entry)
+    save_data(data)
+
+# Lancer les tâches lors du démarrage
+@bot.event
+async def on_ready():
+    global twitter_user_id
+    logging.info(f"Bot connecté en tant que {bot.user}")
+    twitter_user_id = await fetch_twitter_user_id()
+    twitter_check_loop.start()
+    cleanup_empty_vcs.start()
+    cleanup_old_squad_messages.start()
+    await start_web_app()
 
 # --- Règlement ---
 # --- Texte règlement ---
