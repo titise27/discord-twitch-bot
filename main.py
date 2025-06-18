@@ -209,6 +209,13 @@ created_vcs = set()
 created_vc_names = set()
 squad_lock = asyncio.Lock()  # Ajout d'un verrou
 
+# --- Chargement des IDs de logs depuis les variables d'environnement ---
+LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
+LOG_ARRIVANTS_CHANNEL_ID = int(os.getenv("LOG_ARRIVANTS_CHANNEL_ID", 0))
+LOG_TWITCH_CHANNEL_ID = int(os.getenv("LOG_TWITCH_CHANNEL_ID", 0))
+LOG_CHANNEL_UPDATE_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_UPDATE_CHANNEL_ID", 0))
+GUIDE_CHANNEL_ID = int(os.getenv("GUIDE_CHANNEL_ID", 0))
+
 # --- Fonction utilitaire pour envoyer un message dans un salon spécifique ---
 async def log_to_specific_channel(channel_id: int, message: str):
     channel = bot.get_channel(channel_id)
