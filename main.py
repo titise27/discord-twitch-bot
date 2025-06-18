@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import random
 from urllib.parse import urlencode
+import time
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,9 @@ TWITCH_SUB_T3_ROLE_ID = int(os.getenv("TWITCH_SUB_T3_ROLE_ID", 0))
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 TWITTER_USERNAME = os.getenv("TWITTER_USERNAME")
 TWITTER_ALERT_CHANNEL_ID = int(os.getenv("TWITTER_ALERT_CHANNEL_ID", 0))
+TWITTER_USER_URL = f"https://api.twitter.com/2/users/by/username/{TWITTER_USERNAME}"
+
+twitter_headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
 
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "0.0.0.0")
 WEBHOOK_PORT = int(os.getenv("PORT", 8080))
@@ -106,7 +110,86 @@ async def log_to_specific_channel(channel_id: int, message: str):
         except Exception as e:
             print(f"[ERROR] Impossible d’envoyer le message dans {channel_id} : {e}")
 
-# (le reste du fichier reste identique jusqu’aux événements Discord)
+# --- Gestion Twitter avec back-off 429 ---
+async def fetch_twitter_user_id():
+    async with ClientSession() as session:
+        async with session.get(TWITTER_USER_URL, headers=twitter_headers) as resp:
+            if resp.status == 429:
+                reset_ts = resp.headers.get("x-rate-limit-reset")
+                if reset_ts:
+                    reset_ts = int(reset_ts)
+                    now_ts = int(time.time())
+                    wait = max(reset_ts - now_ts, 0)
+                    logging.warning(f"[Twitter] Rate limit hit, retry in {wait}s")
+                    await asyncio.sleep(wait + 1)
+                    return await fetch_twitter_user_id()
+                else:
+                    logging.error("[Twitter] Rate limit hit, mais pas d’en-tête reset")
+                    return None
+            if resp.status != 200:
+                text = await resp.text()
+                logging.error(f"[Twitter] Erreur récupération user ID: {resp.status} – {text}")
+                return None
+            data_json = await resp.json()
+            return data_json.get("data", {}).get("id")
+
+async def fetch_latest_tweets(user_id, since_id=None):
+    url = f"https://api.twitter.com/2/users/{user_id}/tweets"
+    params = {"max_results": 5, "tweet.fields": "created_at"}
+    if since_id:
+        params["since_id"] = since_id
+    async with ClientSession() as session:
+        async with session.get(url, headers=twitter_headers, params=params) as resp:
+            if resp.status != 200:
+                logging.error(f"[Twitter] Erreur récupération tweets: {resp.status}")
+                return []
+            data_resp = await resp.json()
+            return data_resp.get("data", [])
+
+# --- Le reste du script (guide, règlement, commandes, tâches, TwitchMonitor, etc.) reste identique jusqu’au on_ready ---
+
+
+@bot.event
+async def on_ready():
+    print(f"Connecté en tant que {bot.user} ({bot.user.id})")
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel is None:
+        print("❌ Salon de logs introuvable, vérifie LOG_CHANNEL_ID !")
+    else:
+        print(f"✅ Salon de logs trouvé : {channel.name} ({channel.id})")
+        try:
+            await channel.send("✅ Le bot est connecté et prêt !")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'envoi dans le salon de logs : {e}")
+
+    # Démarrage des boucles
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+    await envoyer_guide_tuto()
+
+    # Initialisation TwitchMonitor
+    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
+        global twitch_monitor
+        twitch_monitor = TwitchMonitor(
+            TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
+            TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID
+        )
+
+    # Récupération ID Twitter une seule fois
+    if TWITTER_BEARER_TOKEN and TWITTER_USERNAME:
+        global twitter_user_id
+        twitter_user_id = await fetch_twitter_user_id()
+        if twitter_user_id:
+            print(f"[Twitter] ID utilisateur récupéré : {twitter_user_id}")
+        else:
+            print("[Twitter] Impossible de récupérer l'ID utilisateur.")
+
+# --- Continue avec les autres événements, commandes et lancement du bot ---
+
+# (Le reste du code, y compris handle_webhook, twitch_callback, et main(), reste inchangé.)
+
 
 # --- Événements Discord ---
 @bot.event
