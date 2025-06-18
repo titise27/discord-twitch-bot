@@ -466,15 +466,24 @@ async def twitch_callback(request):
             udata = await u_resp.json()
             twitch_user = udata["data"][0]
     discord_id = int(state)
-    guild = bot.guilds[0]
-    member = guild.get_member(discord_id)
-    if member:
-        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
-        if role:
-            await member.add_roles(role)
-        data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
-        save_data(data)
-    return web.Response(text="✅ Lien Twitch traité.")
+guild = bot.guilds[0]
+try:
+    member = await guild.fetch_member(discord_id)
+except discord.NotFound:
+    member = None
+
+if member:
+    role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+    if role:
+        await member.add_roles(role)
+
+    # Enregistre le lien Twitch
+    data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
+    save_data(data)
+    print(f"✅ Compte Twitch {twitch_user['login']} lié à {member.name}")
+else:
+    print(f"❌ Membre Discord introuvable pour l'ID {discord_id}")
+
 
 # --- Démarrage du bot et serveur web ---
 def main():
