@@ -281,9 +281,9 @@ async def cleanup_old_squad_messages():
 # --- Nettoyage des salons vocaux éphémères ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
-    guild = discord.utils.get(bot.guilds, id=ctx.guild.id if ctx.guild else 0)
-    if not guild:
+    if not bot.guilds:
         return
+    guild = bot.guilds[0]
     for vc_id in list(created_vcs):
         vc = guild.get_channel(vc_id)
         if vc and len(vc.members) == 0:
