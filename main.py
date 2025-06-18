@@ -35,6 +35,9 @@ MEMBRE_ROLE_ID = int(os.getenv("MEMBRE_ROLE_ID", 0))
 REGLEMENT_CHANNEL_ID = int(os.getenv("REGLEMENT_CHANNEL_ID", 0))
 
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
+LOG_ARRIVANTS_CHANNEL_ID = int(os.getenv("LOG_ARRIVANTS_CHANNEL_ID", 0))
+LOG_TWITCH_CHANNEL_ID = int(os.getenv("LOG_TWITCH_CHANNEL_ID", 0))
+LOG_CHANNEL_UPDATE_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_UPDATE_CHANNEL_ID", 0))
 GUIDE_CHANNEL_ID = int(os.getenv("GUIDE_CHANNEL_ID", 0))
 
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
@@ -78,9 +81,9 @@ def save_data(data):
 
 data = load_data()
 
-# --- Fonction de log unique ---
+# --- Fonctions de log ---
 async def log_to_discord(message: str):
-    print(f"[LOG] Tentative d'envoi dans le salon de logs: {message}")  # debug console
+    print(f"[LOG] Tentative d'envoi dans le salon de logs: {message}")
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel is None:
         print("[ERROR] Le salon de logs est introuvable. Vérifie LOG_CHANNEL_ID.")
@@ -90,6 +93,61 @@ async def log_to_discord(message: str):
         print("[LOG] Message envoyé avec succès dans le salon de logs.")
     except Exception as e:
         print(f"[ERROR] Erreur lors de l'envoi du message de log : {e}")
+
+async def log_to_specific_channel(channel_id: int, message: str):
+    channel = bot.get_channel(channel_id)
+    if channel:
+        try:
+            await channel.send(message)
+        except Exception as e:
+            print(f"[ERROR] Impossible d’envoyer le message dans {channel_id} : {e}")
+
+# (le reste du fichier reste identique jusqu’aux événements Discord)
+
+# --- Événements Discord ---
+@bot.event
+async def on_ready():
+    print(f"Connecté en tant que {bot.user} ({bot.user.id})")
+    channel = bot.get_channel(LOG_CHANNEL_ID)
+    if channel is None:
+        print("❌ Salon de logs introuvable, vérifie LOG_CHANNEL_ID !")
+    else:
+        print(f"✅ Salon de logs trouvé : {channel.name} ({channel.id})")
+        try:
+            await channel.send("✅ Le bot est connecté et prêt !")
+        except Exception as e:
+            print(f"❌ Erreur lors de l'envoi dans le salon de logs : {e}")
+
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+    await envoyer_guide_tuto()
+
+    global twitch_monitor
+    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
+        twitch_monitor = TwitchMonitor(
+            TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
+            TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID
+        )
+
+@bot.event
+async def on_member_join(member):
+    await log_to_specific_channel(LOG_ARRIVANTS_CHANNEL_ID, f"👋 {member.mention} a rejoint le serveur.")
+
+@bot.event
+async def on_guild_channel_update(before, after):
+    if before.name != after.name:
+        await log_to_specific_channel(
+            LOG_CHANNEL_UPDATE_CHANNEL_ID,
+            f"🛠️ Le salon `{before.name}` a été renommé en `{after.name}`."
+        )
+
+# (Dans TwitchMonitor.check_stream, remplace l’envoi direct dans un channel par ceci :)
+# await log_to_specific_channel(LOG_TWITCH_CHANNEL_ID, f"🔴 {self.streamer_login} est en live : **{title}**\n{url_stream}")
+
+# Le reste de ton fichier continue normalement...
+
 
 # --- Texte règlement ---
 reglement_texte = """
