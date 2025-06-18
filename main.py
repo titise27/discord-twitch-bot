@@ -208,6 +208,9 @@ async def clear(ctx, amount: int = 10):
 created_vcs = set()
 created_vc_names = set()
 
+# --- Flag pour éviter les doublons dans on_ready ---
+on_ready_executed = False
+
 # --- Commande squad ---
 class SquadJoinButton(ui.View):
     def __init__(self, vc, max_members):
@@ -233,6 +236,7 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 @bot.command()
+@commands.cooldown(1, 10, commands.BucketType.user)  # Anti spam : 1 appel toutes les 10s par utilisateur
 async def squad(ctx, max_players: int = None, *, game_name: str = None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
@@ -305,7 +309,11 @@ async def cleanup_empty_vcs():
 # Lancer les tâches lors du démarrage
 @bot.event
 async def on_ready():
-    global twitter_user_id
+    global twitter_user_id, on_ready_executed
+    if on_ready_executed:
+        return
+    on_ready_executed = True
+
     logging.info(f"Bot connecté en tant que {bot.user}")
     twitter_user_id = await fetch_twitter_user_id()
     if not twitter_check_loop.is_running():
