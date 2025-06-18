@@ -294,7 +294,19 @@ async def cleanup_old_squad_messages():
             data["squad_messages"].remove(entry)
     save_data(data)
 
-# --- Nettoyage des salons vocaux éphémères ---
+# --- Suppression instantanée des vocaux quand vides ---
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if before.channel and before.channel.id in created_vcs:
+        if len(before.channel.members) == 0:
+            created_vcs.discard(before.channel.id)
+            created_vc_names.discard(before.channel.name)
+            try:
+                await before.channel.delete()
+            except Exception as e:
+                logging.warning(f"Erreur suppression salon vocal : {e}")
+
+# --- Nettoyage périodique de sécurité (fallback) ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
     if not bot.guilds:
