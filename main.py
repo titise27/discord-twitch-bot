@@ -449,35 +449,51 @@ async def envoyer_guide_tuto():
 
     guide_msg_id = data.get("guide_message_id")
 
+    # Si un ancien message est référencé, on le désépinglera et le supprimera
     if guide_msg_id:
         try:
-            msg = await channel.fetch_message(guide_msg_id)
-            logging.info("Le guide est déjà présent. Rien à faire.")
-            return
+            old_msg = await channel.fetch_message(guide_msg_id)
+            # Désépingler
+            try:
+                await old_msg.unpin()
+            except Exception as e:
+                logging.warning(f"Impossible de désépingler l'ancien guide : {e}")
+            # Supprimer
+            await old_msg.delete()
         except discord.NotFound:
-            logging.info("Le message du guide n'existe plus, on va le renvoyer.")
-            data["guide_message_id"] = None
-            save_data(data)
+            logging.info("Le message du guide n'existe plus, prêt à renvoyer.")
+        except Exception as e:
+            logging.warning(f"Erreur lors de la suppression de l'ancien guide : {e}")
+
+        # Réinitialisation pour forcer l'envoi
+        data["guide_message_id"] = None
+        save_data(data)
 
     image_path = "assets/squad-guide.png"
     if not os.path.exists(image_path):
         logging.warning("Image du guide introuvable.")
         return
 
+    # Envoi du nouveau guide
     with open(image_path, "rb") as f:
         file = discord.File(f, filename="squad-guide.png")
-        msg = await channel.send(content="📌 **Voici le guide pour créer une squad**", file=file)
+        msg = await channel.send(
+            content="📌 **Voici le guide pour créer une squad**", 
+            file=file
+        )
 
-        try:
-            await msg.pin()
-        except discord.Forbidden:
-            logging.warning("Le bot n'a pas la permission d'épingler le message.")
-        except Exception as e:
-            logging.error(f"Erreur lors de l'épinglage : {e}")
+    # Épingler le nouveau message
+    try:
+        await msg.pin()
+    except discord.Forbidden:
+        logging.warning("Le bot n'a pas la permission d'épingler le message.")
+    except Exception as e:
+        logging.error(f"Erreur lors de l'épinglage : {e}")
 
-        data["guide_message_id"] = msg.id
-        save_data(data)
-        logging.info("Guide envoyé, épinglé et ID sauvegardé.")
+    # Sauvegarde de l'ID du nouveau message
+    data["guide_message_id"] = msg.id
+    save_data(data)
+    logging.info("Guide envoyé, épinglé et ID sauvegardé.")
 
 # --- Commande squad + bouton rejoindre ---
 class SquadJoinButton(ui.View):
