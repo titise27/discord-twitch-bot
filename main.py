@@ -488,4 +488,95 @@ class TwitchMonitor:
 async def handle_webhook(request):
     try:
         payload = await request.json()
-        logging.info(f"
+        state = payload.get("state")
+        code = payload.get("code")
+        if not state or not code:
+            return web.Response(status=400, text="Données manquantes")
+
+        # Échange du code contre un token d'accès Twitch
+        token_url = "https://id.twitch.tv/oauth2/token"
+        params = {
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("REDIRECT_URI")
+        }
+
+        async with ClientSession() as session:
+            async with session.post(token_url, data=params) as resp:
+                token_data = await resp.json()
+                access_token = token_data.get("access_token")
+
+                if not access_token:
+                    return web.Response(status=400, text="Token invalide")
+
+                # Récupère les infos de l'utilisateur Twitch
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Client-Id": TWITCH_CLIENT_ID
+                }
+                async with session.get("https://api.twitch.tv/helix/users", headers=headers) as user_resp:
+                    user_data = await user_resp.json()
+                    if "data" not in user_data:
+                        return web.Response(status=400, text="Utilisateur Twitch non trouvé")
+
+                    twitch_user = user_data["data"][0]
+                    twitch_id = twitch_user["id"]
+                    twitch_login = twitch_user["login"]
+
+                    discord_id = int(state)
+                    data["linked_accounts"][str(discord_id)] = {
+                        "twitch_id": twitch_id,
+                        "twitch_login": twitch_login,
+                        "linked_at": datetime.now().isoformat()
+                    }
+                    save_data(data)
+
+        return web.Response(status=200, text="Compte Twitch lié avec succès !")
+
+    except Exception as e:
+        logging.error(f"Erreur webhook : {e}")
+        return web.Response(status=500, text="Erreur serveur")
+
+
+# --- Lancement du serveur Web ---
+async def start_web_app():
+    app = web.Application()
+    app.add_routes([web.post("/webhook", handle_webhook)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
+    await site.start()
+    logging.info(f"Webhook serveur démarré sur http://{WEBHOOK_HOST}:{WEBHOOK_PORT}")
+
+# --- Événement prêt du bot ---
+@bot.event
+async def on_ready():
+    global twitch_monitor, twitter_user_id
+    logging.info(f"Bot connecté en tant que {bot.user}")
+
+    twitch_monitor = TwitchMonitor(
+        TWITCH_CLIENT_ID,
+        TWITCH_CLIENT_SECRET,
+        TWITCH_STREAMER_LOGIN,
+        TWITCH_ALERT_CHANNEL_ID
+    )
+
+    twitter_user_id = await fetch_twitter_user_id()
+
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+
+    await envoyer_guide_tuto()
+    await start_web_app()
+
+# --- Lancement du bot ---
+if __name__ == "__main__":
+    try:
+        bot.run(DISCORD_TOKEN)
+    except Exception as e:
+        logging.error(f"Erreur au lancement du bot : {e}")
+
