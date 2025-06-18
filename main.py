@@ -223,8 +223,13 @@ async def ban(ctx, member: discord.Member, *, reason=None):
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 5):
-    deleted = await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f"🧹 {len(deleted)-1} messages supprimés.", delete_after=3)
+    try:
+        deleted = await ctx.channel.purge(limit=amount + 1)
+        await ctx.send(f"🧹 {len(deleted) - 1} messages supprimés.", delete_after=3)
+    except discord.Forbidden:
+        await ctx.send("❌ Je n'ai pas la permission de supprimer les messages.")
+    except discord.HTTPException as e:
+        await ctx.send(f"❌ Erreur lors de la suppression : {e}")
     
 @bot.command()
 @commands.has_permissions(administrator=True)
