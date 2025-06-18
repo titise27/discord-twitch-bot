@@ -272,7 +272,7 @@ async def squad(ctx, max_players: int = None, *, game_name: str = None):
     view.message = msg
     data.setdefault("squad_messages", []).append({
         "message_id": msg.id,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     })
     save_data(data)
 
