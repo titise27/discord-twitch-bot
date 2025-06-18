@@ -207,6 +207,7 @@ async def clear(ctx, amount: int = 10):
 # --- Liste des salons vocaux créés dynamiquement ---
 created_vcs = set()
 created_vc_names = set()
+squad_lock = asyncio.Lock()  # Ajout d'un verrou
 
 # --- Flag pour éviter les doublons dans on_ready ---
 on_ready_executed = False
@@ -236,50 +237,50 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 @bot.command()
-@commands.cooldown(1, 10, commands.BucketType.user)  # Anti spam : 1 appel toutes les 10s par utilisateur
+@commands.cooldown(1, 10, commands.BucketType.user)
 async def squad(ctx, max_players: int = None, *, game_name: str = None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
 
-    category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
-    channel_name = f"{game_name} - Squad {ctx.author.display_name}"
+    async with squad_lock:
+        category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
+        channel_name = f"{game_name} - Squad {ctx.author.display_name}"
 
-    # Vérifie si un salon avec le même nom a déjà été créé récemment
-    if channel_name in created_vc_names:
-        return await ctx.send("Un salon pour cette squad existe déjà ou vient d'être créé. Merci de patienter une minute.")
+        if channel_name in created_vc_names:
+            return await ctx.send("Un salon pour cette squad existe déjà ou vient d'être créé. Merci de patienter une minute.")
 
-    vc = await ctx.guild.create_voice_channel(
-        name=channel_name,
-        category=category,
-        user_limit=max_players
-    )
-    created_vcs.add(vc.id)
-    created_vc_names.add(channel_name)
+        vc = await ctx.guild.create_voice_channel(
+            name=channel_name,
+            category=category,
+            user_limit=max_players
+        )
+        created_vcs.add(vc.id)
+        created_vc_names.add(channel_name)
 
-    try:
-        await ctx.author.move_to(vc)
-    except:
-        pass
+        try:
+            await ctx.author.move_to(vc)
+        except:
+            pass
 
-    view = SquadJoinButton(vc, max_players)
-    embed = discord.Embed(
-        title=vc.name,
-        description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
-        color=discord.Color.green()
-    )
-    announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-    msg = await (announce or ctx).send(embed=embed, view=view)
-    view.message = msg
-    data.setdefault("squad_messages", []).append({
-        "message_id": msg.id,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    })
-    save_data(data)
+        view = SquadJoinButton(vc, max_players)
+        embed = discord.Embed(
+            title=vc.name,
+            description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
+            color=discord.Color.green()
+        )
+        announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
+        msg = await (announce or ctx).send(embed=embed, view=view)
+        view.message = msg
+        data.setdefault("squad_messages", []).append({
+            "message_id": msg.id,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        save_data(data)
 
 # --- Suppression automatique des messages de squad après 24h ---
 @tasks.loop(hours=1)
 async def cleanup_old_squad_messages():
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     announce_ch = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
     for entry in list(data.get("squad_messages", [])):
         message_id = entry.get("message_id")
@@ -299,12 +300,15 @@ async def cleanup_empty_vcs():
     if not bot.guilds:
         return
     guild = bot.guilds[0]
-    for vc_id in list(created_vcs):
-        vc = guild.get_channel(vc_id)
-        if vc and len(vc.members) == 0:
+    category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
+    if not category:
+        return
+
+    for vc in category.voice_channels:
+        if len(vc.members) == 0:
             created_vc_names.discard(vc.name)
+            created_vcs.discard(vc.id)
             await vc.delete()
-            created_vcs.remove(vc_id)
 
 # Lancer les tâches lors du démarrage
 @bot.event
