@@ -79,8 +79,8 @@ def load_data():
         "giveaways": {},
         "tickets": {},
         "polls": {},
-        "twitch_subscribers": {}
-        "active_squads": {} 
+        "twitch_subscribers": {},
+        "active_squads": {}
     }
 
 def save_data(data):
