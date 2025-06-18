@@ -204,6 +204,9 @@ async def clear(ctx, amount: int = 10):
     deleted = await ctx.channel.purge(limit=amount)
     await ctx.send(f"🧹 {len(deleted)} messages supprimés.", delete_after=5)
 
+# --- Liste des salons vocaux créés dynamiquement ---
+created_vcs = set()
+
 # --- Commande squad ---
 class SquadJoinButton(ui.View):
     def __init__(self, vc, max_members):
@@ -275,15 +278,30 @@ async def cleanup_old_squad_messages():
             data["squad_messages"].remove(entry)
     save_data(data)
 
+# --- Nettoyage des salons vocaux éphémères ---
+@tasks.loop(minutes=1)
+async def cleanup_empty_vcs():
+    guild = discord.utils.get(bot.guilds, id=ctx.guild.id if ctx.guild else 0)
+    if not guild:
+        return
+    for vc_id in list(created_vcs):
+        vc = guild.get_channel(vc_id)
+        if vc and len(vc.members) == 0:
+            await vc.delete()
+            created_vcs.remove(vc_id)
+
 # Lancer les tâches lors du démarrage
 @bot.event
 async def on_ready():
     global twitter_user_id
     logging.info(f"Bot connecté en tant que {bot.user}")
     twitter_user_id = await fetch_twitter_user_id()
-    twitter_check_loop.start()
-    cleanup_empty_vcs.start()
-    cleanup_old_squad_messages.start()
+    if not twitter_check_loop.is_running():
+        twitter_check_loop.start()
+    if not cleanup_empty_vcs.is_running():
+        cleanup_empty_vcs.start()
+    if not cleanup_old_squad_messages.is_running():
+        cleanup_old_squad_messages.start()
     await start_web_app()
 
 # --- Règlement ---
