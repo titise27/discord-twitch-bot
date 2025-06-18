@@ -117,7 +117,6 @@ async def fetch_twitter_user_id():
                 reset_ts = resp.headers.get("x-rate-limit-reset")
                 if reset_ts:
                     wait = max(int(reset_ts) - int(time.time()), 0)
-                    logging.warning(f"[Twitter] Rate limit hit, retry in {wait}s")
                     await asyncio.sleep(wait + 1)
                     return await fetch_twitter_user_id()
                 return None
@@ -137,7 +136,6 @@ async def fetch_latest_tweets(user_id, since_id=None):
                 reset_ts = resp.headers.get("x-rate-limit-reset")
                 if reset_ts:
                     wait = max(int(reset_ts) - int(time.time()), 0)
-                    logging.warning(f"[Twitter] Rate limit tweets, retry in {wait}s")
                     await asyncio.sleep(wait + 1)
                     return await fetch_latest_tweets(user_id, since_id)
                 return []
@@ -166,7 +164,7 @@ async def envoyer_guide_tuto():
         return
     with open(path, "rb") as f:
         file = discord.File(f, filename="squad-guide.png")
-        msg = await channel.send("📌 **Guide mise à jour**", file=file)
+        msg = await channel.send("📌 **Voici le guide pour créer une squad**", file=file)
     try:
         await msg.pin()
     except:
@@ -174,14 +172,12 @@ async def envoyer_guide_tuto():
     data["guide_message_id"] = msg.id
     save_data(data)
 
-@bot.command(name="updateguide")
-@commands.has_permissions(administrator=True)
-async def update_guide(ctx):
-    await envoyer_guide_tuto()
-    await ctx.send("✅ Guide mis à jour.", delete_after=5)
-
 # --- Règlement et vue du bouton ---
-reglement_texte = "..."
+reglement_texte = """
+📜 **・Règlement du serveur Discord**
+... (ton texte complet) ...
+"""
+
 class ReglementView(ui.View):
     def __init__(self, client_id, redirect_uri):
         super().__init__(timeout=None)
@@ -193,40 +189,39 @@ class ReglementView(ui.View):
         role = interaction.guild.get_role(MEMBRE_ROLE_ID)
         if role and role not in interaction.user.roles:
             await interaction.user.add_roles(role)
-        query = urlencode({"client_id": self.client_id, "redirect_uri": self.redirect_uri, "response_type": "code", "scope": "user:read:email", "state": str(interaction.user.id)})
+        query = urlencode({
+            "client_id": self.client_id,
+            "redirect_uri": self.redirect_uri,
+            "response_type": "code",
+            "scope": "user:read:email",
+            "state": str(interaction.user.id)
+        })
         twitch_url = f"https://id.twitch.tv/oauth2/authorize?{query}"
-        await interaction.response.send_message(f"✅ Règlement OK! {twitch_url}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Règlement accepté !\n🔗 {twitch_url}", ephemeral=True)
 
-# Enregistrement de la vue du règlement pour persistance
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def reglement(ctx):
-    embed = discord.Embed(title="Règlement", description=reglement_texte, color=discord.Color.blue())
+    embed = discord.Embed(title="Règlement du serveur", description=reglement_texte, color=discord.Color.blue())
     view = ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI"))
     msg = await ctx.send(embed=embed, view=view)
     data["reglement_message_id"] = msg.id
     save_data(data)
 
-# --- Modération de base ---
+# --- Commandes modération et logs d’événements ---
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason=None):
-    try:
-        await member.kick(reason=reason)
-        await ctx.send(f"👢 {member} expulsé. Raison: {reason or 'Non spécifiée'}")
-        await log_to_discord(f"{member} a été expulsé. Raison: {reason or 'Non spécifiée'}")
-    except Exception as e:
-        await ctx.send(f"Erreur kick: {e}")
+async def kick(ctx, member: discord.Member, *, reason: str=None):
+    await member.kick(reason=reason)
+    await ctx.send(f"👢 {member} expulsé. Raison : {reason or 'Non spécifiée'}")
+    await log_to_discord(f"{member} a été expulsé. Raison : {reason or 'Non spécifiée'}")
 
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason=None):
-    try:
-        await member.ban(reason=reason)
-        await ctx.send(f"🔨 {member} banni. Raison: {reason or 'Non spécifiée'}")
-        await log_to_discord(f"{member} a été banni. Raison: {reason or 'Non spécifiée'}")
-    except Exception as e:
-        await ctx.send(f"Erreur ban: {e}")
+async def ban(ctx, member: discord.Member, *, reason: str=None):
+    await member.ban(reason=reason)
+    await ctx.send(f"🔨 {member} banni. Raison : {reason or 'Non spécifiée'}")
+    await log_to_discord(f"{member} a été banni. Raison : {reason or 'Non spécifiée'}")
 
 # --- Événements pour logs d’arrivants et changements de salons ---
 @bot.event
@@ -234,12 +229,49 @@ async def on_member_join(member):
     await log_to_specific_channel(LOG_ARRIVANTS_CHANNEL_ID, f"👋 {member.mention} a rejoint le serveur.")
 
 @bot.event
+async def on_member_remove(member):
+    await log_to_discord(f"👋 {member.name} a quitté le serveur.")
+
+@bot.event
 async def on_guild_channel_update(before, after):
     if before.name != after.name:
-        await log_to_specific_channel(
-            LOG_CHANNEL_UPDATE_CHANNEL_ID,
-            f"🛠️ Le salon `{before.name}` a été renommé en `{after.name}`."
-        )
+        await log_to_specific_channel(LOG_CHANNEL_UPDATE_CHANNEL_ID, f"🛠️ `{before.name}` renommé en `{after.name}`.")
+
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot or not message.guild:
+        return
+    await log_to_discord(f"🗑️ Message supprimé de {message.author.mention} dans {message.channel.mention} : `{message.content}`")
+
+@bot.event
+async def on_message_edit(before, after):
+    if before.author.bot or not before.guild:
+        return
+    if before.content != after.content:
+        await log_to_discord(f"✏️ Message modifié par {before.author.mention} dans {before.channel.mention}\nAvant: `{before.content}`\nAprès: `{after.content}`")
+
+# --- Votre on_ready avec enregistrement de la vue du règlement ---
+@bot.event
+async def on_ready():
+    # Enregistrement persistant de la vue pour le bouton règlement
+    bot.add_view(ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI")))
+
+    logging.info(f"Connecté : {bot.user} ({bot.user.id})")
+    await log_to_discord("✅ Bot connecté et prêt !")
+
+    # Démarrage des tâches
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+    await envoyer_guide_tuto()
+
+    # Initialisation TwitchMonitor & Twitter
+    global twitch_monitor, twitter_user_id
+    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
+        twitch_monitor = TwitchMonitor(TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID)
+    if TWITTER_BEARER_TOKEN and TWITTER_USERNAME:
+        twitter_user_id = await fetch_twitter_user_id()
 
 # --- Squad management ---
 class SquadJoinButton(ui.View):
@@ -248,14 +280,16 @@ class SquadJoinButton(ui.View):
         self.vc = vc
         self.max_members = max_members
         self.message = None
+
     @ui.button(label="Rejoindre", style=discord.ButtonStyle.primary, custom_id="join_squad")
     async def join(self, interaction: discord.Interaction, button: ui.Button):
         member = interaction.user
         if member.voice and member.voice.channel == self.vc:
-            return await interaction.response.send_message("Tu es déjà dans la squad.", ephemeral=True)
+            return await interaction.response.send_message("Tu es déjà dans cette squad.", ephemeral=True)
         if len(self.vc.members) >= self.max_members:
             button.disabled = True
-            if self.message: await self.message.edit(view=self)
+            if self.message:
+                await self.message.edit(view=self)
             return await interaction.response.send_message("Cette squad est pleine.", ephemeral=True)
         await member.move_to(self.vc)
         await interaction.response.send_message(f"Tu as rejoint {self.vc.name} !", ephemeral=True)
@@ -273,15 +307,21 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     suffix = random.randint(1000, 9999)
     vc_name = f"{game_name} - Squad {ctx.author.display_name} ({suffix})"
     vc = await ctx.guild.create_voice_channel(name=vc_name, category=category, user_limit=max_players)
-    try: await ctx.author.move_to(vc)
-    except: pass
+    try:
+        await ctx.author.move_to(vc)
+    except:
+        pass
     view = SquadJoinButton(vc, max_members=max_players)
-    embed = discord.Embed(title=vc.name, description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}", color=discord.Color.green())
+    embed = discord.Embed(
+        title=vc.name,
+        description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
+        color=discord.Color.green()
+    )
     announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
     msg = await (announce or ctx).send(embed=embed, view=view)
     view.message = msg
 
-# --- Tâches récurrentes et autres évents / main() inchangés ---
+# --- Tâches récurrentes ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
     guild = bot.guilds[0] if bot.guilds else None
@@ -292,170 +332,11 @@ async def cleanup_empty_vcs():
         return
     for vc in category.voice_channels:
         if not vc.members:
-            await vc.delete()
+            try:
+                await vc.delete()
+            except Exception as e:
+                logging.error(f"Erreur suppression salon vide: {e}")
 
 @tasks.loop(seconds=30)
 async def check_giveaways():
-    now = datetime.now(UTC)
-    for gid, g in list(data.get("giveaways", {}).items()):
-        end_time = datetime.fromisoformat(g["end_time"])
-        if now >= end_time:
-            ch = bot.get_channel(g["channel_id"])
-            if ch:
-                try:
-                    msg = await ch.fetch_message(g["message_id"])
-                except:
-                    data["giveaways"].pop(gid, None)
-                    continue
-                users = []
-                for r in msg.reactions:
-                    if str(r.emoji) == "🎉":
-                        users = [u for u in await r.users().flatten() if not u.bot]
-                        break
-                if users:
-                    winner = random.choice(users)
-                    await ch.send(f"🎊 {winner.mention} a gagné **{g['prize']}** !")
-                else:
-                    await ch.send("Personne n'a participé.")
-            data["giveaways"].pop(gid, None)
-    save_data(data)
-
-@tasks.loop(minutes=1)
-async def twitch_check_loop():
-    if twitch_monitor:
-        await twitch_monitor.check_stream()
-
-@tasks.loop(minutes=2)
-async def twitter_check_loop():
-    ch = bot.get_channel(TWITTER_ALERT_CHANNEL_ID)
-    if not ch or not twitter_user_id:
-        return
-    last_id = max(data.get("twitter_posted_tweets", [0])) if data.get("twitter_posted_tweets") else None
-    tweets = await fetch_latest_tweets(twitter_user_id, since_id=last_id)
-    for tw in reversed(tweets):
-        if tw["id"] not in data.get("twitter_posted_tweets", []):
-            url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
-            await ch.send(f"🐦 {tw['text']}\n{url}")
-            data.setdefault("twitter_posted_tweets", []).append(tw["id"])
-            save_data(data)
-
-# --- Classe TwitchMonitor ---
-class TwitchMonitor:
-    def __init__(self, cid, secret, login, alert_ch):
-        self.client_id, self.client_secret = cid, secret
-        self.streamer_login, self.alert_channel_id = login, alert_ch
-        self.token, self.token_expiry, self.last_live = None, None, False
-        self.session = ClientSession()
-
-    async def get_token(self):
-        url = "https://id.twitch.tv/oauth2/token"
-        params = {"client_id": self.client_id, "client_secret": self.client_secret, "grant_type": "client_credentials"}
-        async with self.session.post(url, params=params) as r:
-            d = await r.json()
-            self.token = d.get("access_token")
-            self.token_expiry = datetime.now() + timedelta(seconds=d.get("expires_in", 3600))
-
-    async def check_stream(self):
-        if not self.token or datetime.now() >= self.token_expiry:
-            await self.get_token()
-        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
-        url = f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}"
-        async with self.session.get(url, headers=headers) as r:
-            res = await r.json()
-            sd = res.get("data")
-            ch = bot.get_channel(self.alert_channel_id)
-            if sd and not self.last_live:
-                self.last_live = True
-                title = sd[0].get("title")
-                await ch.send(f"🔴 {self.streamer_login} est en live : **{title}** https://twitch.tv/{self.streamer_login}")
-            elif not sd:
-                self.last_live = False
-
-# --- Webhook & OAuth callback ---
-async def handle_webhook(request):
-    try:
-        payload = await request.json()
-        logging.info(f"Webhook reçu : {payload}")
-        return web.Response(text="OK")
-    except Exception as e:
-        return web.Response(status=400, text=str(e))
-
-async def twitch_callback(request):
-    params = request.rel_url.query
-    code, state = params.get("code"), params.get("state")
-    if not code or not state:
-        return web.Response(status=400, text="Params manquants")
-    token_payload = {
-        "client_id": TWITCH_CLIENT_ID,
-        "client_secret": TWITCH_CLIENT_SECRET,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": os.getenv("REDIRECT_URI")
-    }
-    async with ClientSession() as session:
-        async with session.post("https://id.twitch.tv/oauth2/token", data=token_payload) as resp:
-            tok = await resp.json()
-    access = tok.get("access_token")
-    if not access:
-        return web.Response(status=400, text="Pas de token")
-    headers = {"Authorization": f"Bearer {access}", "Client-Id": TWITCH_CLIENT_ID}
-    async with ClientSession() as session:
-        async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
-            ud = await u_resp.json()
-            tu = ud["data"][0]
-    guild = bot.guilds[0]
-    member = guild.get_member(int(state))
-    if member:
-        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
-        if role:
-            await member.add_roles(role)
-        data.setdefault("linked_accounts", {})[state] = tu["login"]
-        save_data(data)
-    return web.Response(text="✅ Lien traité")
-
-# --- on_ready unique ---
-@bot.event
-async def on_ready():
-    logging.info(f"Connecté : {bot.user} ({bot.user.id})")
-    ch = bot.get_channel(LOG_CHANNEL_ID)
-    if ch:
-        await ch.send("✅ Bot connecté et prêt !")
-        
-    # Enregistrement de la vue du règlement pour persistance des interactions
-    bot.add_view(ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI")))
-
-
-    # Démarrage des tâches
-    cleanup_empty_vcs.start()
-    check_giveaways.start()
-    twitch_check_loop.start()
-    twitter_check_loop.start()
-    await envoyer_guide_tuto()
-
-    # Initialisation TwitchMonitor
-    global twitch_monitor, twitter_user_id
-    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
-        twitch_monitor = TwitchMonitor(
-            TWITCH_CLIENT_ID,
-            TWITCH_CLIENT_SECRET,
-            TWITCH_STREAMER_LOGIN,
-            TWITCH_ALERT_CHANNEL_ID
-        )
-
-    # Récupération ID Twitter une seule fois
-    if TWITTER_BEARER_TOKEN and TWITTER_USERNAME:
-        twitter_user_id = await fetch_twitter_user_id()
-
-# --- Démarrage du bot et serveur web ---
-def main():
-    app = web.Application()
-    app.router.add_post("/webhook", handle_webhook)
-    app.router.add_get("/auth/twitch/callback", twitch_callback)
-    runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
-    loop.run_until_complete(bot.start(DISCORD_TOKEN))
-
-if __name__ == "__main__":
-    main()
+    now = datetime.now(
