@@ -65,7 +65,7 @@ DATA_FILE = "data.json"
 twitch_monitor = None
 twitter_user_id = None
 
-# --- Gestion persistante ---
+# Ajout au début de ton fichier dans load_data()
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -299,6 +299,7 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 
+# Ajout dans ta commande !squad
 @bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
@@ -332,6 +333,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
         "max_players": max_players
     }
     save_data(data)
+
 
 
 # --- Tâches récurrentes ---
@@ -454,48 +456,58 @@ async def handle_webhook(request):
 
 # --- Callback OAuth2 Twitch ---
 async def twitch_callback(request):
-    params = request.rel_url.query
-    code = params.get("code")
-    state = params.get("state")
-    if not code or not state:
-        return web.Response(status=400, text="Paramètres manquants.")
-    token_url = "https://id.twitch.tv/oauth2/token"
-    payload = {
-        "client_id": TWITCH_CLIENT_ID,
-        "client_secret": TWITCH_CLIENT_SECRET,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": os.getenv("REDIRECT_URI")
-    }
-    async with ClientSession() as session:
-        async with session.post(token_url, data=payload) as resp:
-            token_data = await resp.json()
-    access_token = token_data.get("access_token")
-    if not access_token:
-        return web.Response(status=400, text="Impossible d’obtenir un token.")
-    headers = {"Authorization": f"Bearer {access_token}", "Client-Id": TWITCH_CLIENT_ID}
-    async with ClientSession() as session:
-        async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
-            udata = await u_resp.json()
-            twitch_user = udata["data"][0]
-
-    discord_id = int(state)
-    guild = bot.guilds[0]
-
     try:
-        member = await guild.fetch_member(discord_id)
-    except discord.NotFound:
-        member = None
+        params = request.rel_url.query
+        code = params.get("code")
+        state = params.get("state")
+        if not code or not state:
+            return web.Response(status=400, text="Paramètres manquants.")
 
-    if member:
-        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
-        if role:
-            await member.add_roles(role)
-        data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
-        save_data(data)
-        print(f"✅ Compte Twitch {twitch_user['login']} lié à {member.name}")
-    else:
-        print(f"❌ Membre Discord introuvable pour l'ID {discord_id}")
+        token_url = "https://id.twitch.tv/oauth2/token"
+        payload = {
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("REDIRECT_URI")
+        }
+
+        async with ClientSession() as session:
+            async with session.post(token_url, data=payload) as resp:
+                token_data = await resp.json()
+
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return web.Response(status=400, text="Impossible d’obtenir un token.")
+
+        headers = {"Authorization": f"Bearer {access_token}", "Client-Id": TWITCH_CLIENT_ID}
+        async with ClientSession() as session:
+            async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
+                udata = await u_resp.json()
+                twitch_user = udata["data"][0]
+
+        discord_id = int(state)
+        guild = bot.guilds[0]
+
+        try:
+            member = await guild.fetch_member(discord_id)
+        except discord.NotFound:
+            member = None
+
+        if member:
+            role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+            if role:
+                await member.add_roles(role)
+            data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
+            save_data(data)
+            print(f"✅ Compte Twitch {twitch_user['login']} lié à {member.name}")
+        else:
+            print(f"❌ Membre Discord introuvable pour l'ID {discord_id}")
+
+        return web.Response(text="Compte lié avec succès !")
+
+    except Exception as e:
+        return web.Response(status=500, text=f"Erreur serveur : {str(e)}")
 
     # Enregistre le lien Twitch
     data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
@@ -515,6 +527,11 @@ def main():
     loop.run_until_complete(runner.setup())
     loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
     loop.run_until_complete(bot.start(DISCORD_TOKEN))
+
+@bot.event
+# (Reprend ici tout ton code d’origine jusqu’au bloc @bot.event async def on_voice_state_update)
+
+# Dernier bloc corrigé — À mettre **à la fin** de ton fichier main.py :
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -552,3 +569,58 @@ async def on_voice_state_update(member, before, after):
                 await msg.edit(content=None, embed=embed)
             except:
                 pass
+
+# Callback Twitch corrigé (aucun else flottant)
+async def twitch_callback(request):
+    try:
+        params = request.rel_url.query
+        code = params.get("code")
+        state = params.get("state")
+        if not code or not state:
+            return web.Response(status=400, text="Paramètres manquants.")
+
+        token_url = "https://id.twitch.tv/oauth2/token"
+        payload = {
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("REDIRECT_URI")
+        }
+
+        async with ClientSession() as session:
+            async with session.post(token_url, data=payload) as resp:
+                token_data = await resp.json()
+
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return web.Response(status=400, text="Impossible d’obtenir un token.")
+
+        headers = {"Authorization": f"Bearer {access_token}", "Client-Id": TWITCH_CLIENT_ID}
+        async with ClientSession() as session:
+            async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
+                udata = await u_resp.json()
+                twitch_user = udata["data"][0]
+
+        discord_id = int(state)
+        guild = bot.guilds[0]
+
+        try:
+            member = await guild.fetch_member(discord_id)
+        except discord.NotFound:
+            member = None
+
+        if member:
+            role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+            if role:
+                await member.add_roles(role)
+            data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
+            save_data(data)
+            print(f"✅ Compte Twitch {twitch_user['login']} lié à {member.name}")
+        else:
+            print(f"❌ Membre Discord introuvable pour l'ID {discord_id}")
+
+        return web.Response(text="Compte lié avec succès !")
+
+    except Exception as e:
+        return web.Response(status=500, text=f"Erreur serveur : {str(e)}")
