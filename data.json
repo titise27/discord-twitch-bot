@@ -10,7 +10,7 @@
     "tickets": {},
     "polls": {},
     "twitch_subscribers": {},
-    "guide_message_id": 1384953009871782021,
+    "guide_message_id": 1385009599744311366,
     "squad_messages": [
         {
             "message_id": 1384903413283688479,
@@ -72,5 +72,6 @@
             "message_id": 1384916315659042987,
             "timestamp": "2025-06-18T15:22:59.976056+00:00"
         }
-    ]
+    ],
+    "active_squads": {}
 }
