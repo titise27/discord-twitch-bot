@@ -216,6 +216,11 @@ LOG_TWITCH_CHANNEL_ID = int(os.getenv("LOG_TWITCH_CHANNEL_ID", 0))
 LOG_CHANNEL_UPDATE_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_UPDATE_CHANNEL_ID", 0))
 GUIDE_CHANNEL_ID = int(os.getenv("GUIDE_CHANNEL_ID", 0))
 
+# --- Liste des salons vocaux créés dynamiquement ---
+created_vcs = set()
+created_vc_names = set()
+squad_lock = asyncio.Lock()  # Ajout d'un verrou
+
 # --- Fonction utilitaire pour envoyer un message dans un salon spécifique ---
 async def log_to_specific_channel(channel_id: int, message: str):
     channel = bot.get_channel(channel_id)
@@ -256,138 +261,64 @@ async def on_guild_channel_update(before, after):
         msg = f"✏️ Salon renommé : `{before.name}` → `{after.name}`"
         await log_to_specific_channel(LOG_CHANNEL_UPDATE_CHANNEL_ID, msg)
 
-# --- Flag pour éviter les doublons dans on_ready ---
-on_ready_executed = False
+# --- Commande pour envoyer un lien externe ---
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def link(ctx, titre: str, url: str):
+    if not url.startswith("http://") and not url.startswith("https://"):
+        return await ctx.send("❌ Lien invalide. Il doit commencer par http:// ou https://")
 
-# --- Commande squad ---
-class SquadJoinButton(ui.View):
-    def __init__(self, vc, max_members):
-        super().__init__(timeout=None)
-        self.vc = vc
-        self.max_members = max_members
-        self.message = None
+    embed = discord.Embed(
+        title=titre,
+        description=f"[Clique ici pour ouvrir le lien]({url})",
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text=f"Partagé par {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+    await ctx.send(embed=embed)
 
-    @ui.button(label="Rejoindre", style=discord.ButtonStyle.primary, custom_id="join_squad")
-    async def join(self, interaction: discord.Interaction, button: ui.Button):
-        member = interaction.user
-        if member.voice and member.voice.channel == self.vc:
-            return await interaction.response.send_message("Tu es déjà dans la squad.", ephemeral=True)
-        if len(self.vc.members) >= self.max_members:
-            button.disabled = True
-            if self.message:
-                await self.message.edit(view=self)
-            return await interaction.response.send_message("Cette squad est pleine.", ephemeral=True)
-        await member.move_to(self.vc)
-        await interaction.response.send_message(f"Tu as rejoint {self.vc.name} !", ephemeral=True)
-        if len(self.vc.members) >= self.max_members:
-            button.disabled = True
-            await self.message.edit(view=self)
+# --- Commandes Guide Visuel ---
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def guide(ctx):
+    guide_id = data.get("guide_message_id")
+    ch = bot.get_channel(GUIDE_CHANNEL_ID)
+    if guide_id and ch:
+        try:
+            msg = await ch.fetch_message(guide_id)
+            await ctx.send(f"✅ Guide actuellement visible ici : {msg.jump_url}")
+        except:
+            await ctx.send("❌ Impossible de retrouver le message du guide enregistré.")
+    else:
+        await ctx.send("⚠️ Aucun guide enregistré pour le moment.")
 
 @bot.command()
-@commands.cooldown(1, 10, commands.BucketType.user)
-async def squad(ctx, max_players: int = None, *, game_name: str = None):
-    if not max_players or not game_name:
-        return await ctx.send("Usage: !squad <nombre> <jeu>")
+@commands.has_permissions(administrator=True)
+async def updateguide(ctx):
+    ch = bot.get_channel(GUIDE_CHANNEL_ID)
+    if not ch:
+        return await ctx.send("❌ Salon de guide introuvable.")
 
-    async with squad_lock:
-        category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
-        channel_name = f"{game_name} - Squad {ctx.author.display_name}"
-
-        if channel_name in created_vc_names:
-            return await ctx.send("Un salon pour cette squad existe déjà ou vient d'être créé. Merci de patienter une minute.")
-
-        vc = await ctx.guild.create_voice_channel(
-            name=channel_name,
-            category=category,
-            user_limit=max_players
-        )
-        created_vcs.add(vc.id)
-        created_vc_names.add(channel_name)
-
+    old_id = data.get("guide_message_id")
+    if old_id:
         try:
-            await ctx.author.move_to(vc)
+            old_msg = await ch.fetch_message(old_id)
+            await old_msg.delete()
         except:
             pass
 
-        view = SquadJoinButton(vc, max_players)
-        embed = discord.Embed(
-            title=vc.name,
-            description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
-            color=discord.Color.green()
-        )
-        announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-        msg = await (announce or ctx).send(embed=embed, view=view)
-        view.message = msg
-        data.setdefault("squad_messages", []).append({
-            "message_id": msg.id,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        save_data(data)
+    guide_path = "assets/squad-guide.png"
+    if not os.path.exists(guide_path):
+        return await ctx.send("❌ Fichier d’image introuvable : assets/squad-guide.png")
 
-# --- Suppression automatique des messages de squad après 24h ---
-@tasks.loop(hours=1)
-async def cleanup_old_squad_messages():
-    now = datetime.now(timezone.utc)
-    announce_ch = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-    for entry in list(data.get("squad_messages", [])):
-        message_id = entry.get("message_id")
-        timestamp = datetime.fromisoformat(entry.get("timestamp"))
-        if (now - timestamp).total_seconds() >= 86400:
-            try:
-                msg = await announce_ch.fetch_message(message_id)
-                await msg.delete()
-            except:
-                pass
-            data["squad_messages"].remove(entry)
+    file = discord.File(guide_path, filename="guide.png")
+    new_msg = await ch.send("📘 Guide visuel mis à jour :", file=file)
+    await new_msg.pin()
+
+    data["guide_message_id"] = new_msg.id
     save_data(data)
 
-# --- Suppression instantanée des vocaux quand vides ---
-@bot.event
-async def on_voice_state_update(member, before, after):
-    logging.info(f"[voice_state] {member} before={before.channel} after={after.channel}")
-    if before.channel and before.channel.id in created_vcs:
-        if len(before.channel.members) == 0:
-            created_vcs.discard(before.channel.id)
-            created_vc_names.discard(before.channel.name)
-            try:
-                await before.channel.delete()
-                logging.info(f"[voice_state] Salon supprimé : {before.channel.name}")
-            except Exception as e:
-                logging.warning(f"Erreur suppression salon vocal : {e}")
+    await ctx.send(f"✅ Guide mis à jour et épinglé dans {ch.mention}")
 
-# --- Nettoyage périodique de sécurité (fallback) ---
-@tasks.loop(minutes=1)
-async def cleanup_empty_vcs():
-    if not bot.guilds:
-        return
-    guild = bot.guilds[0]
-    category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
-    if not category:
-        return
-
-    for vc in category.voice_channels:
-        if len(vc.members) == 0:
-            created_vc_names.discard(vc.name)
-            created_vcs.discard(vc.id)
-            await vc.delete()
-
-# Lancer les tâches lors du démarrage
-@bot.event
-async def on_ready():
-    global twitter_user_id, on_ready_executed
-    if on_ready_executed:
-        return
-    on_ready_executed = True
-
-    logging.info(f"Bot connecté en tant que {bot.user}")
-    twitter_user_id = await fetch_twitter_user_id()
-    if not twitter_check_loop.is_running():
-        twitter_check_loop.start()
-    if not cleanup_empty_vcs.is_running():
-        cleanup_empty_vcs.start()
-    if not cleanup_old_squad_messages.is_running():
-        cleanup_old_squad_messages.start()
-    await start_web_app()
 
 
 # --- Règlement ---
