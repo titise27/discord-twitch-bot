@@ -110,6 +110,7 @@ async def log_to_specific_channel(channel_id: int, message: str):
             return
     await channel.send(message)
 
+
 # --- Gestion Twitter avec back-off sur 429 ---
 async def fetch_twitter_user_id():
     async with ClientSession() as session:
@@ -309,7 +310,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
 
     try:
         await ctx.author.move_to(vc)
-    except Exception:
+    except:
         pass
 
     view = SquadJoinButton(vc, max_members=max_players)
@@ -321,6 +322,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
     msg = await (announce or ctx).send(embed=embed, view=view)
     view.message = msg
+
 
 # --- Tâches récurrentes ---
 @tasks.loop(minutes=1)
