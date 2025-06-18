@@ -80,6 +80,7 @@ def load_data():
         "tickets": {},
         "polls": {},
         "twitch_subscribers": {}
+        "active_squads": {} 
     }
 
 def save_data(data):
@@ -297,6 +298,7 @@ class SquadJoinButton(ui.View):
             button.disabled = True
             await self.message.edit(view=self)
 
+
 @bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
@@ -307,19 +309,30 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     suffix = random.randint(1000, 9999)
     vc_name = f"{game_name} - Squad {ctx.author.display_name} ({suffix})"
     vc = await ctx.guild.create_voice_channel(name=vc_name, category=category, user_limit=max_players)
+
     try:
         await ctx.author.move_to(vc)
     except:
         pass
-    view = SquadJoinButton(vc, max_members=max_players)
+
     embed = discord.Embed(
         title=vc.name,
-        description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
+        description=f"🎮 Jeu : **{game_name}**\n👤 Membres :\n• {ctx.author.display_name}",
         color=discord.Color.green()
     )
+
+    view = SquadJoinButton(vc, max_players)
     announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-    msg = await (announce or ctx).send(embed=embed, view=view)
+    msg = await announce.send(embed=embed, view=view)
     view.message = msg
+
+    data["active_squads"][str(vc.id)] = {
+        "message_id": msg.id,
+        "channel_id": announce.id,
+        "max_players": max_players
+    }
+    save_data(data)
+
 
 # --- Tâches récurrentes ---
 @tasks.loop(minutes=1)
@@ -495,6 +508,39 @@ def main():
     loop.run_until_complete(runner.setup())
     loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
     loop.run_until_complete(bot.start(DISCORD_TOKEN))
+@bot.event
+async def on_voice_state_update(member, before, after):
+    for channel in [before.channel, after.channel]:
+        if not channel or str(channel.id) not in data.get("active_squads", {}):
+            continue
+
+        squad_info = data["active_squads"][str(channel.id)]
+        try:
+            msg_channel = bot.get_channel(squad_info["channel_id"])
+            msg = await msg_channel.fetch_message(squad_info["message_id"])
+        except:
+            continue
+
+        members = [m for m in channel.members if not m.bot]
+        if not members:
+            try:
+                await msg.delete()
+            except:
+                pass
+            try:
+                await channel.delete()
+            except:
+                pass
+            data["active_squads"].pop(str(channel.id), None)
+            save_data(data)
+        else:
+            embed = discord.Embed(
+                title=channel.name,
+                description=f"🎮 Jeu : **{channel.name.split(' - ')[0]}**\n👥 Joueurs : {len(members)} / {channel.user_limit}\n\n" +
+                            "👤 Membres :\n" + "\n".join(f"• {m.display_name}" for m in members),
+                color=discord.Color.green()
+            )
+            await msg.edit(embed=embed)
 
 if __name__ == "__main__":
     main()
