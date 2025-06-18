@@ -187,6 +187,7 @@ class ReglementView(ui.View):
         super().__init__(timeout=None)
         self.client_id = client_id
         self.redirect_uri = redirect_uri
+
     @ui.button(label="✅ J'accepte", style=discord.ButtonStyle.green, custom_id="accept_reglement")
     async def accept(self, interaction: discord.Interaction, button: ui.Button):
         role = interaction.guild.get_role(MEMBRE_ROLE_ID)
@@ -195,6 +196,9 @@ class ReglementView(ui.View):
         query = urlencode({"client_id": self.client_id, "redirect_uri": self.redirect_uri, "response_type": "code", "scope": "user:read:email", "state": str(interaction.user.id)})
         twitch_url = f"https://id.twitch.tv/oauth2/authorize?{query}"
         await interaction.response.send_message(f"✅ Règlement OK! {twitch_url}", ephemeral=True)
+
+# Enregistrement de la vue du règlement pour persistance
+bot.add_view(ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI")))
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def reglement(ctx):
@@ -280,6 +284,7 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
 
 # --- Tâches récurrentes et autres évents / main() inchangés ---
 # (Le reste du script, y compris on_ready, tâches, TwitchMonitor, webhook, etc.)
+
 
 
 
