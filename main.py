@@ -493,6 +493,23 @@ async def envoyer_guide_tuto():
     data["guide_message_id"] = msg.id
     save_data(data)
     logging.info("Guide envoyé, épinglé et ID sauvegardé.")
+    
+    @bot.command(name="updateguide")
+@commands.has_permissions(administrator=True)
+async def update_guide(ctx):
+    channel = bot.get_channel(GUIDE_CHANNEL_ID)
+    old_id = data.get("guide_message_id")
+    if old_id:
+        try:
+            old = await channel.fetch_message(old_id)
+            await old.unpin()
+            await old.delete()
+        except:
+            pass
+    data["guide_message_id"] = None
+    save_data(data)
+    await envoyer_guide_tuto()
+    await ctx.send("✅ Guide mis à jour.", delete_after=5)
 
 # --- Commande squad + bouton rejoindre ---
 class SquadJoinButton(ui.View):
