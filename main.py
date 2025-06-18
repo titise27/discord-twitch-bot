@@ -299,7 +299,7 @@ class SquadJoinButton(ui.View):
             await self.message.edit(view=self)
 
 
-bot.command()
+@bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
@@ -331,7 +331,6 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
         "channel_id": announce.id,
         "max_players": max_players
     }
-    save_data(data)
     save_data(data)
 
 
@@ -479,17 +478,24 @@ async def twitch_callback(request):
         async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
             udata = await u_resp.json()
             twitch_user = udata["data"][0]
-    discord_id = int(state)
-guild = bot.guilds[0]
-try:
-    member = await guild.fetch_member(discord_id)
-except discord.NotFound:
-    member = None
 
-if member:
-    role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
-    if role:
-        await member.add_roles(role)
+    discord_id = int(state)
+    guild = bot.guilds[0]
+
+    try:
+        member = await guild.fetch_member(discord_id)
+    except discord.NotFound:
+        member = None
+
+    if member:
+        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+        if role:
+            await member.add_roles(role)
+        data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
+        save_data(data)
+        print(f"✅ Compte Twitch {twitch_user['login']} lié à {member.name}")
+    else:
+        print(f"❌ Membre Discord introuvable pour l'ID {discord_id}")
 
     # Enregistre le lien Twitch
     data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
@@ -509,6 +515,7 @@ def main():
     loop.run_until_complete(runner.setup())
     loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
     loop.run_until_complete(bot.start(DISCORD_TOKEN))
+
 @bot.event
 async def on_voice_state_update(member, before, after):
     for channel in [before.channel, after.channel]:
