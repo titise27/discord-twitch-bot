@@ -117,19 +117,18 @@ async def fetch_twitter_user_id():
             if resp.status == 429:
                 reset_ts = resp.headers.get("x-rate-limit-reset")
                 if reset_ts:
-                    reset_ts = int(reset_ts)
-                    now_ts = int(time.time())
-                    wait = max(reset_ts - now_ts, 0)
+                    wait = max(int(reset_ts) - int(time.time()), 0)
                     logging.warning(f"[Twitter] Rate limit hit, retry in {wait}s")
                     await asyncio.sleep(wait + 1)
                     return await fetch_twitter_user_id()
-                else:
-                    logging.error("[Twitter] Rate limit hit, mais pas d’en-tête reset")
-                    return None
+                logging.error("[Twitter] Rate limit hit, pas d’en-tête reset")
+                return None
+
             if resp.status != 200:
                 text = await resp.text()
                 logging.error(f"[Twitter] Erreur récupération user ID: {resp.status} – {text}")
                 return None
+
             data_json = await resp.json()
             return data_json.get("data", {}).get("id")
 
