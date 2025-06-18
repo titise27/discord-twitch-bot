@@ -385,14 +385,10 @@ async def twitter_check_loop():
                 f"{content}\n"
                 f"{url}"
             )
-"
-                f"{content}
-"
-                f"{url}"
-            )
             await ch.send(message)
             data.setdefault("twitter_posted_tweets", []).append(tw["id"])
             save_data(data)
+
     # Fin de la boucle twitter_check_loop
 # --- Classe TwitchMonitor ---
 class TwitchMonitor:
