@@ -212,6 +212,34 @@ squad_lock = asyncio.Lock()  # Ajout d'un verrou
 # --- Flag pour éviter les doublons dans on_ready ---
 on_ready_executed = False
 
+# --- Log dans un channel spécifique ---
+async def log_to_specific_channel(channel_id: int, message: str):
+    channel = bot.get_channel(channel_id)
+    if channel:
+        await channel.send(message)
+
+# --- Logs des événements modération ---
+@bot.event
+async def on_member_join(member):
+    await log_to_specific_channel(LOG_ARRIVANTS_CHANNEL_ID, f"👋 {member.mention} a rejoint le serveur.")
+
+@bot.event
+async def on_member_update(before, after):
+    added_roles = [r for r in after.roles if r not in before.roles]
+    removed_roles = [r for r in before.roles if r not in after.roles]
+    messages = []
+    if added_roles:
+        messages.append(f"➕ Rôles ajoutés à {after.mention} : {', '.join(r.name for r in added_roles)}")
+    if removed_roles:
+        messages.append(f"➖ Rôles retirés à {after.mention} : {', '.join(r.name for r in removed_roles)}")
+    for msg in messages:
+        await log_to_specific_channel(LOG_CHANNEL_ID, msg)
+
+@bot.event
+async def on_guild_channel_update(before, after):
+    if before.name != after.name:
+        await log_to_specific_channel(LOG_CHANNEL_UPDATE_CHANNEL_ID, f"✏️ Salon renommé : **{before.name}** → **{after.name}**")
+
 # --- Commande squad ---
 class SquadJoinButton(ui.View):
     def __init__(self, vc, max_members):
@@ -305,8 +333,6 @@ async def on_voice_state_update(member, before, after):
             try:
                 await before.channel.delete()
                 logging.info(f"[voice_state] Salon supprimé : {before.channel.name}")
-            except Exception as e:
-                logging.warning(f"Erreur suppression salon vocal : {e}")
             except Exception as e:
                 logging.warning(f"Erreur suppression salon vocal : {e}")
 
