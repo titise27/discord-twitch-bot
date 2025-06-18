@@ -88,16 +88,27 @@ def save_data(data):
 
 data = load_data()
 
-# --- Fonctions de log ---
+# --- Fonctions de log — fiabilisées ---
 async def log_to_discord(message: str):
+    # Essaye d'abord dans le cache, puis fetch
     channel = bot.get_channel(LOG_CHANNEL_ID)
-    if channel:
-        await channel.send(f"📌 {message}")
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(LOG_CHANNEL_ID)
+        except discord.NotFound:
+            logging.error(f"Salon de logs introuvable (ID {LOG_CHANNEL_ID})")
+            return
+    await channel.send(f"📌 {message}")
 
 async def log_to_specific_channel(channel_id: int, message: str):
     channel = bot.get_channel(channel_id)
-    if channel:
-        await channel.send(message)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(channel_id)
+        except discord.NotFound:
+            logging.error(f"Salon {channel_id} introuvable")
+            return
+    await channel.send(message)
 
 # --- Gestion Twitter avec back-off sur 429 ---
 async def fetch_twitter_user_id():
@@ -279,21 +290,29 @@ class SquadJoinButton(ui.View):
             button.disabled = True
             await self.message.edit(view=self)
 
-@bot.command()
+@@bot.command()
 async def squad(ctx, max_players: int=None, *, game_name: str=None):
     if not max_players or not game_name:
         return await ctx.send("Usage: !squad <nombre> <jeu>")
     category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
+    if category is None:
+        return await ctx.send("Catégorie des salons vocaux introuvable.")
+
+    # Ajout d'un suffixe unique pour éviter les doublons de noms
+    suffix = random.randint(1000, 9999)
+    vc_name = f"{game_name} - Squad {ctx.author.display_name} ({suffix})"
     vc = await ctx.guild.create_voice_channel(
-        name=f"{game_name} - Squad {ctx.author.display_name}",
+        name=vc_name,
         category=category,
         user_limit=max_players
     )
+
     try:
         await ctx.author.move_to(vc)
-    except:
+    except Exception:
         pass
-    view = SquadJoinButton(vc, max_players)
+
+    view = SquadJoinButton(vc, max_members=max_players)
     embed = discord.Embed(
         title=vc.name,
         description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
