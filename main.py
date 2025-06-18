@@ -381,7 +381,10 @@ async def twitter_check_loop():
             content = tw.get("text", "")
             # Envoi du tweet avec sauts de ligne sécurisés
             message = (
-                f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):
+                 f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):\n"
+                 f"{content}\n"
+                 f"{url}"
+             )
 "
                 f"{content}
 "
