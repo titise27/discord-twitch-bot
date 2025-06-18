@@ -90,7 +90,6 @@ data = load_data()
 
 # --- Fonctions de log — fiabilisées ---
 async def log_to_discord(message: str):
-    # Essaye d'abord dans le cache, puis fetch
     channel = bot.get_channel(LOG_CHANNEL_ID)
     if channel is None:
         try:
@@ -109,7 +108,6 @@ async def log_to_specific_channel(channel_id: int, message: str):
             logging.error(f"Salon {channel_id} introuvable")
             return
     await channel.send(message)
-
 
 # --- Gestion Twitter avec back-off sur 429 ---
 async def fetch_twitter_user_id():
@@ -163,13 +161,12 @@ async def envoyer_guide_tuto():
             pass
         data["guide_message_id"] = None
         save_data(data)
-
     path = "assets/squad-guide.png"
     if not os.path.exists(path):
         return
     with open(path, "rb") as f:
         file = discord.File(f, filename="squad-guide.png")
-        msg = await channel.send("📌 **Voici le guide pour créer une squad**", file=file)
+        msg = await channel.send("📌 **Guide mise à jour**", file=file)
     try:
         await msg.pin()
     except:
@@ -184,88 +181,62 @@ async def update_guide(ctx):
     await ctx.send("✅ Guide mis à jour.", delete_after=5)
 
 # --- Règlement et vue du bouton ---
-reglement_texte = """
-📜 **・Règlement du serveur**
-... (ton texte complet ici) ...
-"""
-
+reglement_texte = "..."
 class ReglementView(ui.View):
     def __init__(self, client_id, redirect_uri):
         super().__init__(timeout=None)
         self.client_id = client_id
         self.redirect_uri = redirect_uri
-
     @ui.button(label="✅ J'accepte", style=discord.ButtonStyle.green, custom_id="accept_reglement")
     async def accept(self, interaction: discord.Interaction, button: ui.Button):
         role = interaction.guild.get_role(MEMBRE_ROLE_ID)
         if role and role not in interaction.user.roles:
             await interaction.user.add_roles(role)
-        query = urlencode({
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-            "response_type": "code",
-            "scope": "user:read:email",
-            "state": str(interaction.user.id)
-        })
+        query = urlencode({"client_id": self.client_id, "redirect_uri": self.redirect_uri, "response_type": "code", "scope": "user:read:email", "state": str(interaction.user.id)})
         twitch_url = f"https://id.twitch.tv/oauth2/authorize?{query}"
-        await interaction.response.send_message(f"✅ Règlement accepté !\n🔗 {twitch_url}", ephemeral=True)
-
+        await interaction.response.send_message(f"✅ Règlement OK! {twitch_url}", ephemeral=True)
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def reglement(ctx):
-    embed = discord.Embed(title="Règlement du serveur", description=reglement_texte, color=discord.Color.blue())
+    embed = discord.Embed(title="Règlement", description=reglement_texte, color=discord.Color.blue())
     view = ReglementView(TWITCH_CLIENT_ID, os.getenv("REDIRECT_URI"))
     msg = await ctx.send(embed=embed, view=view)
     data["reglement_message_id"] = msg.id
     save_data(data)
 
-# --- Commandes modération basiques ---
+# --- Modération de base ---
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, reason: str = None):
-    await member.kick(reason=reason)
-    await ctx.send(f"👢 {member} expulsé. Raison : {reason or 'Non spécifiée'}")
+async def kick(ctx, member: discord.Member, *, reason=None):
+    try:
+        await member.kick(reason=reason)
+        await ctx.send(f"👢 {member} expulsé. Raison: {reason or 'Non spécifiée'}")
+        await log_to_discord(f"{member} a été expulsé. Raison: {reason or 'Non spécifiée'}")
+    except Exception as e:
+        await ctx.send(f"Erreur kick: {e}")
 
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, reason: str = None):
-    await member.ban(reason=reason)
-    await ctx.send(f"🔨 {member} banni. Raison : {reason or 'Non spécifiée'}")
+async def ban(ctx, member: discord.Member, *, reason=None):
+    try:
+        await member.ban(reason=reason)
+        await ctx.send(f"🔨 {member} banni. Raison: {reason or 'Non spécifiée'}")
+        await log_to_discord(f"{member} a été banni. Raison: {reason or 'Non spécifiée'}")
+    except Exception as e:
+        await ctx.send(f"Erreur ban: {e}")
 
-@bot.command(name="clear")
-@commands.has_permissions(manage_messages=True)
-async def clear(ctx, amount: int = 10):
-    if amount < 1 or amount > 100:
-        return await ctx.send("Le nombre doit être entre 1 et 100.")
-    deleted = await ctx.channel.purge(limit=amount)
-    await ctx.send(f"🧹 {len(deleted)} messages supprimés.", delete_after=5)
+# --- Événements pour logs d’arrivants et changements de salons ---
+@bot.event
+async def on_member_join(member):
+    await log_to_specific_channel(LOG_ARRIVANTS_CHANNEL_ID, f"👋 {member.mention} a rejoint le serveur.")
 
-@bot.command(name="move")
-@commands.has_permissions(move_members=True)
-async def move(ctx, member: discord.Member, channel: discord.VoiceChannel):
-    await member.move_to(channel)
-    await ctx.send(f"🔀 {member.mention} déplacé vers {channel.name}.")
-
-@bot.command()
-async def ping(ctx):
-    await ctx.send("Pong!")
-
-@bot.command()
-async def restart(ctx):
-    if ctx.author.id != OWNER_ID:
-        return await ctx.send("Tu n'as pas la permission.")
-    await ctx.send("Redémarrage du bot...")
-    await bot.close()
-    os.execv(sys.executable, ['python'] + sys.argv)
-
-# --- Commande guide simple ---
-@bot.command()
-async def guide(ctx):
-    path = "assets/squad-guide.png"
-    if os.path.exists(path):
-        await ctx.send(file=discord.File(path))
-    else:
-        await ctx.send("Image non trouvée.")
+@bot.event
+async def on_guild_channel_update(before, after):
+    if before.name != after.name:
+        await log_to_specific_channel(
+            LOG_CHANNEL_UPDATE_CHANNEL_ID,
+            f"🛠️ Le salon `{before.name}` a été renommé en `{after.name}`."
+        )
 
 # --- Squad management ---
 class SquadJoinButton(ui.View):
@@ -274,7 +245,6 @@ class SquadJoinButton(ui.View):
         self.vc = vc
         self.max_members = max_members
         self.message = None
-
     @ui.button(label="Rejoindre", style=discord.ButtonStyle.primary, custom_id="join_squad")
     async def join(self, interaction: discord.Interaction, button: ui.Button):
         member = interaction.user
@@ -282,8 +252,7 @@ class SquadJoinButton(ui.View):
             return await interaction.response.send_message("Tu es déjà dans la squad.", ephemeral=True)
         if len(self.vc.members) >= self.max_members:
             button.disabled = True
-            if self.message:
-                await self.message.edit(view=self)
+            if self.message: await self.message.edit(view=self)
             return await interaction.response.send_message("Cette squad est pleine.", ephemeral=True)
         await member.move_to(self.vc)
         await interaction.response.send_message(f"Tu as rejoint {self.vc.name} !", ephemeral=True)
@@ -298,30 +267,20 @@ async def squad(ctx, max_players: int=None, *, game_name: str=None):
     category = ctx.guild.get_channel(SQUAD_VC_CATEGORY_ID)
     if category is None:
         return await ctx.send("Catégorie des salons vocaux introuvable.")
-
-    # Ajout d'un suffixe unique pour éviter les doublons de noms
     suffix = random.randint(1000, 9999)
     vc_name = f"{game_name} - Squad {ctx.author.display_name} ({suffix})"
-    vc = await ctx.guild.create_voice_channel(
-        name=vc_name,
-        category=category,
-        user_limit=max_players
-    )
-
-    try:
-        await ctx.author.move_to(vc)
-    except:
-        pass
-
+    vc = await ctx.guild.create_voice_channel(name=vc_name, category=category, user_limit=max_players)
+    try: await ctx.author.move_to(vc)
+    except: pass
     view = SquadJoinButton(vc, max_members=max_players)
-    embed = discord.Embed(
-        title=vc.name,
-        description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}",
-        color=discord.Color.green()
-    )
+    embed = discord.Embed(title=vc.name, description=f"Jeu : **{game_name}**\nMax joueurs : {max_players}", color=discord.Color.green())
     announce = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
     msg = await (announce or ctx).send(embed=embed, view=view)
     view.message = msg
+
+# --- Tâches récurrentes et autres évents / main() inchangés ---
+# (Le reste du script, y compris on_ready, tâches, TwitchMonitor, webhook, etc.)
+
 
 
 # --- Tâches récurrentes ---
