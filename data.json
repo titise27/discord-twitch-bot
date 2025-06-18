@@ -10,5 +10,11 @@
     "tickets": {},
     "polls": {},
     "twitch_subscribers": {},
-    "guide_message_id": null
+    "guide_message_id": null,
+    "squad_messages": [
+        {
+            "message_id": 1384903413283688479,
+            "timestamp": "2025-06-18T14:31:43.843353"
+        }
+    ]
 }

@@ -55,6 +55,9 @@ WEBHOOK_PORT = int(os.getenv("PORT", 8080))
 UTC = timezone.utc
 DATA_FILE = "data.json"
 
+# Ajout d'une constante d'ID serveur
+GUILD_ID = int(os.getenv("GUILD_ID", 0))
+
 twitch_monitor = None
 twitter_user_id = None
 
@@ -124,7 +127,7 @@ async def twitter_check_loop():
     for tw in reversed(tweets):
         if tw["id"] not in data.get("twitter_posted_tweets", []):
             url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
-            await ch.send(f"\U0001F426 {tw['text']}\n{url}")
+            await ch.send(f"F426 {tw['text']}\n{url}")
             data.setdefault("twitter_posted_tweets", []).append(tw["id"])
             save_data(data)
 
@@ -141,7 +144,7 @@ async def start_web_app():
 # --- VCs temporaires (nettoyage) ---
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
-    guild = bot.guilds[0] if bot.guilds else None
+    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
     if not guild:
         return
     category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
