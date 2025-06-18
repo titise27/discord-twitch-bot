@@ -339,9 +339,6 @@ async def cleanup_empty_vcs():
 
 @tasks.loop(seconds=30)
 async def check_giveaways():
-    now = datetime.now(
-@tasks.loop(seconds=30)
-async def check_giveaways():
     now = datetime.now(UTC)
     for gid, g in list(data.get("giveaways", {}).items()):
         end_time = datetime.fromisoformat(g["end_time"])
@@ -382,7 +379,9 @@ async def twitter_check_loop():
         if tw["id"] not in data.get("twitter_posted_tweets", []):
             url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
             content = tw.get("text", "")
-            await ch.send(f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):\n{content}\n{url}")
+            await ch.send(f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):
+{content}
+{url}")
             data.setdefault("twitter_posted_tweets", []).append(tw["id"])
             save_data(data)
 
@@ -413,10 +412,7 @@ class TwitchMonitor:
     async def check_stream(self):
         if not self.token or datetime.now(UTC) >= self.token_expiry:
             await self.get_token()
-        headers = {
-            "Client-ID": self.client_id,
-            "Authorization": f"Bearer {self.token}"
-        }
+        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
         url = f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}"
         async with self.session.get(url, headers=headers) as r:
             res = await r.json()
@@ -459,15 +455,11 @@ async def twitch_callback(request):
     access_token = token_data.get("access_token")
     if not access_token:
         return web.Response(status=400, text="Impossible d’obtenir un token.")
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Client-Id": TWITCH_CLIENT_ID
-    }
-    # Récupère l’utilisateur Twitch
+    headers = {"Authorization": f"Bearer {access_token}", "Client-Id": TWITCH_CLIENT_ID}
     async with ClientSession() as session:
         async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
             udata = await u_resp.json()
-    twitch_user = udata["data"][0]
+            twitch_user = udata["data"][0]
     discord_id = int(state)
     guild = bot.guilds[0]
     member = guild.get_member(discord_id)
