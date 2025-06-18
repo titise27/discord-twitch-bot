@@ -340,3 +340,155 @@ async def cleanup_empty_vcs():
 @tasks.loop(seconds=30)
 async def check_giveaways():
     now = datetime.now(
+@tasks.loop(seconds=30)
+async def check_giveaways():
+    now = datetime.now(UTC)
+    for gid, g in list(data.get("giveaways", {}).items()):
+        end_time = datetime.fromisoformat(g["end_time"])
+        if now >= end_time:
+            ch = bot.get_channel(g["channel_id"])
+            if ch:
+                try:
+                    msg = await ch.fetch_message(g["message_id"])
+                except:
+                    data["giveaways"].pop(gid, None)
+                    continue
+                users = []
+                for r in msg.reactions:
+                    if str(r.emoji) == "🎉":
+                        users = [u for u in await r.users().flatten() if not u.bot]
+                        break
+                if users:
+                    winner = random.choice(users)
+                    await ch.send(f"🎊 Félicitations {winner.mention}, tu as gagné **{g['prize']}** !")
+                else:
+                    await ch.send("Personne n'a participé au giveaway.")
+            data["giveaways"].pop(gid, None)
+    save_data(data)
+
+@tasks.loop(minutes=1)
+async def twitch_check_loop():
+    if twitch_monitor:
+        await twitch_monitor.check_stream()
+
+@tasks.loop(minutes=2)
+async def twitter_check_loop():
+    ch = bot.get_channel(TWITTER_ALERT_CHANNEL_ID)
+    if not ch or not twitter_user_id:
+        return
+    last_id = max(data.get("twitter_posted_tweets", [0])) if data.get("twitter_posted_tweets") else None
+    tweets = await fetch_latest_tweets(twitter_user_id, since_id=last_id)
+    for tw in reversed(tweets):
+        if tw["id"] not in data.get("twitter_posted_tweets", []):
+            url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw['id']}"
+            content = tw.get("text", "")
+            await ch.send(f"🐦 Nouveau tweet de {TWITTER_USERNAME} ({tw['created_at']}):\n{content}\n{url}")
+            data.setdefault("twitter_posted_tweets", []).append(tw["id"])
+            save_data(data)
+
+# --- Classe TwitchMonitor ---
+class TwitchMonitor:
+    def __init__(self, cid, secret, login, alert_ch):
+        self.client_id = cid
+        self.client_secret = secret
+        self.streamer_login = login
+        self.alert_channel_id = alert_ch
+        self.token = None
+        self.token_expiry = None
+        self.last_live = False
+        self.session = ClientSession()
+
+    async def get_token(self):
+        url = "https://id.twitch.tv/oauth2/token"
+        params = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "grant_type": "client_credentials"
+        }
+        async with self.session.post(url, params=params) as r:
+            d = await r.json()
+            self.token = d.get("access_token")
+            self.token_expiry = datetime.now(UTC) + timedelta(seconds=d.get("expires_in", 3600))
+
+    async def check_stream(self):
+        if not self.token or datetime.now(UTC) >= self.token_expiry:
+            await self.get_token()
+        headers = {
+            "Client-ID": self.client_id,
+            "Authorization": f"Bearer {self.token}"
+        }
+        url = f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}"
+        async with self.session.get(url, headers=headers) as r:
+            res = await r.json()
+            data_stream = res.get("data")
+            ch = bot.get_channel(self.alert_channel_id)
+            if data_stream and not self.last_live:
+                self.last_live = True
+                title = data_stream[0].get("title")
+                await ch.send(f"🔴 {self.streamer_login} est en live : **{title}** https://twitch.tv/{self.streamer_login}")
+            elif not data_stream:
+                self.last_live = False
+
+# --- Webhook HTTP simple ---
+async def handle_webhook(request):
+    try:
+        payload = await request.json()
+        logging.info(f"Webhook reçu : {payload}")
+        return web.Response(text="Webhook reçu")
+    except Exception as e:
+        return web.Response(status=400, text=str(e))
+
+# --- Callback OAuth2 Twitch ---
+async def twitch_callback(request):
+    params = request.rel_url.query
+    code = params.get("code")
+    state = params.get("state")
+    if not code or not state:
+        return web.Response(status=400, text="Paramètres manquants.")
+    token_url = "https://id.twitch.tv/oauth2/token"
+    payload = {
+        "client_id": TWITCH_CLIENT_ID,
+        "client_secret": TWITCH_CLIENT_SECRET,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": os.getenv("REDIRECT_URI")
+    }
+    async with ClientSession() as session:
+        async with session.post(token_url, data=payload) as resp:
+            token_data = await resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return web.Response(status=400, text="Impossible d’obtenir un token.")
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Client-Id": TWITCH_CLIENT_ID
+    }
+    # Récupère l’utilisateur Twitch
+    async with ClientSession() as session:
+        async with session.get("https://api.twitch.tv/helix/users", headers=headers) as u_resp:
+            udata = await u_resp.json()
+    twitch_user = udata["data"][0]
+    discord_id = int(state)
+    guild = bot.guilds[0]
+    member = guild.get_member(discord_id)
+    if member:
+        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+        if role:
+            await member.add_roles(role)
+        data.setdefault("linked_accounts", {})[state] = twitch_user["login"]
+        save_data(data)
+    return web.Response(text="✅ Lien Twitch traité.")
+
+# --- Démarrage du bot et serveur web ---
+def main():
+    app = web.Application()
+    app.router.add_post("/webhook", handle_webhook)
+    app.router.add_get("/auth/twitch/callback", twitch_callback)
+    runner = web.AppRunner(app)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(runner.setup())
+    loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
+    loop.run_until_complete(bot.start(DISCORD_TOKEN))
+
+if __name__ == "__main__":
+    main()
