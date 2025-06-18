@@ -297,12 +297,16 @@ async def cleanup_old_squad_messages():
 # --- Suppression instantanée des vocaux quand vides ---
 @bot.event
 async def on_voice_state_update(member, before, after):
+    logging.info(f"[voice_state] {member} before={before.channel} after={after.channel}")
     if before.channel and before.channel.id in created_vcs:
         if len(before.channel.members) == 0:
             created_vcs.discard(before.channel.id)
             created_vc_names.discard(before.channel.name)
             try:
                 await before.channel.delete()
+                logging.info(f"[voice_state] Salon supprimé : {before.channel.name}")
+            except Exception as e:
+                logging.warning(f"Erreur suppression salon vocal : {e}")
             except Exception as e:
                 logging.warning(f"Erreur suppression salon vocal : {e}")
 
