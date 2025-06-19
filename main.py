@@ -363,8 +363,14 @@ async def squad(ctx: commands.Context, max_players: int = None, *, game_name: st
     channel = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID) or ctx
     msg = await channel.send(embed=embed, view=view)
     view.message = msg
-    data.setdefault("active_squads", {})[str(vc.id)] = {"channel_id": channel.id, "message_id": msg.id}
-    save_data(data)
+    data.setdefault("active_squads", {})[str(vc.id)] = {
+                "channel_id": announce_ch.id,
+                "message_id": msg.id
+            }
+            try:
+                save_data(data)
+            except Exception as e:
+                logging.error(f"[Save Data Error] {e}")
 
 # --- Tâches récurrentes ---
 
@@ -487,14 +493,17 @@ async def on_voice_state_update(member,before,after):
                     async def launch(self, interaction: discord.Interaction, button: discord.ui.Button):
                         if interaction.user.id != self.member.id:
                             return await interaction.response.send_message("Ce bouton ne t'est pas destiné.", ephemeral=True)
-                        await interaction.response.send_modal(SquadSetupModal(self.member))
+                        try:
+                            await interaction.response.send_modal(SquadSetupModal(self.member))
+                        except Exception as e:
+                            logging.error(f"[Modal Launch Error] {e}")
 
                 view = LaunchView(member)
                 await channel.send(f"{member.mention}, clique ci-dessous pour créer ta squad :", view=view, delete_after=60)
             except Exception as e:
                 print(f"❌ Erreur lors de l'envoi du modal dans un salon : {e}")
             except:
-                print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
+            print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
 def main():
     app=web.Application();app.router.add_post("/webhook",handle_webhook);app.router.add_get("/auth/twitch/callback",twitch_callback)
     r=web.AppRunner(app);loop=asyncio.get_event_loop();
@@ -554,7 +563,10 @@ class SquadSetupModal(discord.ui.Modal, title="Créer une Squad"):
         )
 
         try:
+            try:
             await self.member.move_to(vc)
+        except Exception as e:
+            logging.warning(f"[Move Error] {e}")
         except:
             pass
 
@@ -571,13 +583,20 @@ class SquadSetupModal(discord.ui.Modal, title="Créer une Squad"):
 
         announce_ch = interaction.client.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
         if announce_ch:
+            try:
             msg = await announce_ch.send(embed=embed, view=view)
+        except Exception as e:
+            logging.error(f"[Send Embed Error] {e}")
+            return
             view.message = msg
             data.setdefault("active_squads", {})[str(vc.id)] = {
                 "channel_id": announce_ch.id,
                 "message_id": msg.id
             }
-            save_data(data)
+            try:
+                save_data(data)
+            except Exception as e:
+                logging.error(f"[Save Data Error] {e}")
 
         await interaction.response.send_message("✅ Squad créée avec succès !", ephemeral=True)
 
