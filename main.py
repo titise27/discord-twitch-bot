@@ -30,13 +30,12 @@ logging.basicConfig(level=logging.INFO)
 # --- Variables d’environnement ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
-TEMP_VC_TRIGGER_ID = int(os.getenv("TEMP_VC_TRIGGER_ID", 0))
 SQUAD_VC_CATEGORY_ID = int(os.getenv("SQUAD_VC_CATEGORY_ID", 0))
 SQUAD_ANNOUNCE_CHANNEL_ID = int(os.getenv("SQUAD_ANNOUNCE_CHANNEL_ID", 0))
 MEMBRE_ROLE_ID = int(os.getenv("MEMBRE_ROLE_ID", 0))
 GUIDE_CHANNEL_ID = int(os.getenv("GUIDE_CHANNEL_ID", 0))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
-LOG_ARRIVANTS_CHANNEL_ID = int(os.getenv("LOG_ARRIVANTS_CHANNEL_ID", 0))
+LOG_ARRIVANTS_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ARRIVANTS_CHANNEL_ID", 0))
 LOG_CHANNEL_UPDATE_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_UPDATE_CHANNEL_ID", 0))
 
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
@@ -77,7 +76,6 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Charger les données initiales
 data = load_data()
 
 # --- Fonctions de log ---
@@ -120,7 +118,8 @@ async def fetch_latest_tweets(user_id, since_id=None):
     if since_id:
         params["since_id"] = since_id
     async with ClientSession() as session:
-        async with session.get(f"https://api.twitter.com/2/users/{user_id}/tweets", headers={"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}, params=params) as resp:
+        async with session.get(f"https://api.twitter.com/2/users/{user_id}/tweets",
+                               headers={"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}, params=params) as resp:
             if resp.status == 429:
                 reset = resp.headers.get("x-rate-limit-reset")
                 if reset:
@@ -134,9 +133,8 @@ async def fetch_latest_tweets(user_id, since_id=None):
 # --- Guide tutoriel ---
 async def envoyer_guide_tuto():
     channel = bot.get_channel(GUIDE_CHANNEL_ID)
-    if channel is None:
+    if not channel:
         return
-    # Retirer ancien guide
     if data.get("guide_message_id"):
         try:
             old = await channel.fetch_message(data["guide_message_id"])
@@ -144,7 +142,6 @@ async def envoyer_guide_tuto():
             await old.delete()
         except:
             pass
-    # Envoyer nouveau guide
     path = "assets/squad-guide.png"
     if os.path.exists(path):
         with open(path, "rb") as f:
@@ -176,7 +173,8 @@ class ReglementView(ui.View):
         role = interaction.guild.get_role(MEMBRE_ROLE_ID)
         if role and role not in interaction.user.roles:
             await interaction.user.add_roles(role)
-        q = urlencode({"client_id": self.client_id, "redirect_uri": self.redirect_uri, "response_type": "code", "scope": "user:read:email", "state": str(interaction.user.id)})
+        q = urlencode({"client_id": self.client_id, "redirect_uri": self.redirect_uri,
+                       "response_type": "code", "scope": "user:read:email", "state": str(interaction.user.id)})
         url = f"https://id.twitch.tv/oauth2/authorize?{q}"
         await interaction.response.send_message(f"✅ Règlement accepté !\n🔗 {url}", ephemeral=True)
 
@@ -269,9 +267,10 @@ class SquadModal(ui.Modal, title="Créer ton squad"):
         players = self.squad_players.value
         if players not in ['1','2','3']:
             return await interaction.response.send_message("❌ Indique 1, 2 ou 3.", ephemeral=True)
-        # Envoi commande !squad
         await interaction.channel.send(f"!squad {players} {self.squad_name.value}")
-        await interaction.response.send_message(f"✅ Commande envoyée : !squad {players} {self.squad_name.value}", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ Commande envoyée : !squad {players} {self.squad_name.value}", ephemeral=True
+        )
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
@@ -288,7 +287,9 @@ async def squad(ctx: commands.Context, max_players: int=None, *, game_name: str=
         return await ctx.send("Catégorie introuvable.")
     suffix = random.randint(1000,9999)
     vc_name = f"{game_name} - Squad {ctx.author.display_name} ({suffix})"
-    vc = await ctx.guild.create_voice_channel(name=vc_name, category=category, user_limit=max_players)
+    vc = await ctx.guild.create_voice_channel(
+        name=vc_name, category=category, user_limit=max_players
+    )
     try:
         await ctx.author.move_to(vc)
     except:
@@ -306,7 +307,10 @@ async def squad(ctx: commands.Context, max_players: int=None, *, game_name: str=
     announce_channel = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID) or ctx.channel
     msg = await announce_channel.send(embed=embed, view=view)
     view.message = msg
-    data.setdefault("active_squads", {})[str(vc.id)] = {"channel_id": announce_channel.id, "message_id": msg.id}
+    data.setdefault("active_squads", {})[str(vc.id)] = {
+        "channel_id": announce_channel.id,
+        "message_id": msg.id
+    }
     save_data(data)
 
 class SquadJoinButton(ui.View):
@@ -334,17 +338,22 @@ class SquadJoinButton(ui.View):
         lines = [
             f"🎮 Jeu : **{self.vc.name.split(' - ')[0]}**",
             f"👥 Joueurs : {len(players)}/{self.max_members}",
-            "", "👤 Membres :"
+            "",
+            "👤 Membres :"
         ] + [f"• {p.display_name}" for p in players]
         embed = discord.Embed(title=self.vc.name, description="\n".join(lines), color=discord.Color.green())
         if self.message:
             await self.message.edit(embed=embed, view=self)
         if not players or len(players) >= self.max_members:
             if self.message:
-                try: await self.message.delete()
-                except: pass
-            try: await self.vc.delete()
-            except: pass
+                try:
+                    await self.message.delete()
+                except:
+                    pass
+            try:
+                await self.vc.delete()
+            except:
+                pass
             data.get("active_squads", {}).pop(str(self.vc.id), None)
             save_data(data)
 
@@ -352,12 +361,12 @@ class SquadJoinButton(ui.View):
 @tasks.loop(minutes=1)
 async def cleanup_empty_vcs():
     guild = bot.guilds[0] if bot.guilds else None
-    if not guild: return
-    category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
-    if not category: return
-    for vc in category.voice_channels:
-        if not vc.members:
-            await vc.delete()
+    if guild:
+        cat = guild.get_channel(SQUAD_VC_CATEGORY_ID)
+        if cat:
+            for vc in cat.voice_channels:
+                if not vc.members:
+                    await vc.delete()
 
 @tasks.loop(seconds=30)
 async def check_giveaways():
@@ -371,7 +380,10 @@ async def check_giveaways():
                 except:
                     data["giveaways"].pop(gid, None)
                     continue
-                users = [u for r in msg.reactions if str(r.emoji) == "🎉" for u in await r.users().flatten() if not u.bot]
+                users = [
+                    u for r in msg.reactions if str(r.emoji) == "🎉"
+                    for u in await r.users().flatten() if not u.bot
+                ]
                 if users:
                     await ch.send(f"🎊 {random.choice(users).mention} a gagné {g.get('prize','')}")
                 else:
@@ -387,15 +399,14 @@ async def twitch_check_loop():
 @tasks.loop(minutes=2)
 async def twitter_check_loop():
     ch = bot.get_channel(TWITTER_ALERT_CHANNEL_ID)
-    if not ch or not twitter_user_id:
-        return
-    since = max(data.get("twitter_posted_tweets", ["0"]))
-    for tw in reversed(await fetch_latest_tweets(twitter_user_id, since_id=since)):
-        if tw.get("id") not in data.get("twitter_posted_tweets", []):
-            url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw.get('id')}"
-            await ch.send(f"🐦 Nouveau tweet ({tw.get('created_at')}): {tw.get('text')}\n{url}")
-            data.setdefault("twitter_posted_tweets", []).append(tw.get("id"))
-            save_data(data)
+    if ch and twitter_user_id:
+        since = max(data.get("twitter_posted_tweets", ["0"]))
+        for tw in reversed(await fetch_latest_tweets(twitter_user_id, since_id=since)):
+            if tw.get("id") not in data.get("twitter_posted_tweets", []):
+                url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tw.get('id')}"
+                await ch.send(f"🐦 Nouveau tweet ({tw.get('created_at')}): {tw.get('text')}\n{url}")
+                data.setdefault("twitter_posted_tweets", []).append(tw.get("id"))
+                save_data(data)
 
 # --- TwitchMonitor ---
 class TwitchMonitor:
@@ -411,31 +422,40 @@ class TwitchMonitor:
 
     async def get_token(self):
         self.session = ClientSession()
-        resp = await self.session.post("https://id.twitch.tv/oauth2/token", params={"client_id": self.client_id, "client_secret": self.client_secret, "grant_type": "client_credentials"})
-        data = await resp.json()
-        self.token = data.get("access_token")
-        self.token_expiry = datetime.now(UTC) + timedelta(seconds=data.get("expires_in", 3600))
+        resp = await self.session.post(
+            "https://id.twitch.tv/oauth2/token",
+            params={
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "grant_type": "client_credentials"
+            }
+        )
+        d = await resp.json()
+        self.token = d.get("access_token")
+        self.token_expiry = datetime.now(UTC) + timedelta(seconds=d.get("expires_in", 3600))
 
     async def check_stream(self):
         if not self.token or datetime.now(UTC) >= self.token_expiry:
             await self.get_token()
-        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
-        resp = await self.session.get(f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}", headers=headers)
-        data = await resp.json()
-        streams = data.get("data")
-        channel = bot.get_channel(self.alert_channel_id)
+        h = {"Client-ID": self.client_id, "Authorization": f"Bearer {self.token}"}
+        resp = await self.session.get(
+            f"https://api.twitch.tv/helix/streams?user_login={self.streamer_login}", headers=h
+        )
+        data_json = await resp.json()
+        streams = data_json.get("data")
+        ch = bot.get_channel(self.alert_channel_id)
         if streams and not self.last_live:
             self.last_live = True
             title = streams[0].get("title", "")
-            await channel.send(f"🔴 {self.streamer_login} est en live : **{title}** https://twitch.tv/{self.streamer_login}")
+            await ch.send(f"🔴 {self.streamer_login} est en live : **{title}** https://twitch.tv/{self.streamer_login}")
         elif not streams:
             self.last_live = False
 
 # --- Webhook & OAuth handlers ---
 async def handle_webhook(request):
     try:
-        data = await request.json()
-        logging.info(f"Webhook reçu : {data}")
+        payload = await request.json()
+        logging.info(f"Webhook reçu : {payload}")
         return web.Response(text="OK")
     except Exception as e:
         return web.Response(status=400, text=str(e))
@@ -446,7 +466,16 @@ async def twitch_callback(request):
     state = params.get("state")
     if not code or not state:
         return web.Response(status=400, text="Missing code/state")
-    token_resp = await ClientSession().post("https://id.twitch.tv/oauth2/token", data={"client_id": TWITCH_CLIENT_ID, "client_secret": TWITCH_CLIENT_SECRET, "code": code, "grant_type": "authorization_code", "redirect_uri": os.getenv("REDIRECT_URI")})
+    token_resp = await ClientSession().post(
+        "https://id.twitch.tv/oauth2/token",
+        data={
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("REDIRECT_URI")
+        }
+    )
     token_data = await token_resp.json()
     access_token = token_data.get("access_token")
     if not access_token:
@@ -468,38 +497,53 @@ async def twitch_callback(request):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    for channel in (before.channel, after.channel):
-        if not channel or str(channel.id) not in data.get("active_squads", {}):
+    for ch in (before.channel, after.channel):
+        if not ch or str(ch.id) not in data.get("active_squads", {}):
             continue
-        info = data["active_squads"].get(str(channel.id), {})
-        announce_channel = bot.get_channel(info.get("channel_id"))
+        info = data["active_squads"].get(str(ch.id), {})
+        announce_ch = bot.get_channel(info.get("channel_id"))
         try:
-            msg = await announce_channel.fetch_message(info.get("message_id"))
+            msg = await announce_ch.fetch_message(info.get("message_id"))
         except:
             continue
-        members = [m for m in channel.members if not m.bot]
-        if not members:
+        membs = [m for m in ch.members if not m.bot]
+        if not membs:
             await msg.delete()
-            await channel.delete()
-            data["active_squads"].pop(str(channel.id), None)
+            await ch.delete()
+            data["active_squads"].pop(str(ch.id), None)
             save_data(data)
         else:
-            desc = f"🎮 {channel.name.split(' - ')[0]}\n👥 {len(members)}/{channel.user_limit}\n" + "\n".join(f"• {m.display_name}" for m in members)
-            embed = discord.Embed(title=channel.name, description=desc, color=discord.Color.green())
-            await msg.edit(embed=embed)
+            desc = (
+                f"🎮 {ch.name.split(' - ')[0]}\n"
+                f"👥 {len(membs)}/{ch.user_limit}\n" +
+                "\n".join(f"• {m.display_name}" for m in membs)
+            )
+            await msg.edit(embed=discord.Embed(title=ch.name, description=desc, color=discord.Color.green()))
 
-# --- Démarrage du bot et du serveur web ---
-def main():
+# --- exécution principale ---
+async def main():
     app = web.Application()
     app.router.add_post("/webhook", handle_webhook)
     app.router.add_get("/auth/twitch/callback", twitch_callback)
     runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    loop.run_until_complete(web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start())
-    bot.loop.create_task(twitch_check_loop())
-    bot.loop.create_task(twitter_check_loop())
-    loop.run_until_complete(bot.start(DISCORD_TOKEN))
+    await runner.setup()
+    await web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT).start()
+
+    global twitch_monitor, twitter_user_id
+    if all([TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID]):
+        twitch_monitor = TwitchMonitor(
+            TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
+            TWITCH_STREAMER_LOGIN, TWITCH_ALERT_CHANNEL_ID
+        )
+    if TWITTER_BEARER_TOKEN and TWITTER_USERNAME:
+        twitter_user_id = await fetch_twitter_user_id()
+
+    cleanup_empty_vcs.start()
+    check_giveaways.start()
+    twitch_check_loop.start()
+    twitter_check_loop.start()
+
+    await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
