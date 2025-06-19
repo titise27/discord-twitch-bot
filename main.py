@@ -493,8 +493,8 @@ async def on_voice_state_update(member,before,after):
                 await channel.send(f"{member.mention}, clique ci-dessous pour créer ta squad :", view=view, delete_after=60)
             except Exception as e:
                 print(f"❌ Erreur lors de l'envoi du modal dans un salon : {e}")
-        except:
-            print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
+            except:
+                print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
 def main():
     app=web.Application();app.router.add_post("/webhook",handle_webhook);app.router.add_get("/auth/twitch/callback",twitch_callback)
     r=web.AppRunner(app);loop=asyncio.get_event_loop();
