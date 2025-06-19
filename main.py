@@ -244,7 +244,7 @@ async def on_message_edit(before, after):
 @bot.event
 async def on_ready():
     print(f"✅ Connecté en tant que {bot.user}")
-    channel = bot.get_channel(CHANNEL_ID)
+    SQUAD_TEXT_CHANNEL_ID = int(os.getenv("SQUAD_TEXT_CHANNEL_ID", 0))
     if channel:
         button = ui.Button(label="Créer un squad", style=discord.ButtonStyle.primary, custom_id="create_squad")
         view = ui.View()
