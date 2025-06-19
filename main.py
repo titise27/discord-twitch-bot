@@ -471,6 +471,60 @@ async def on_voice_state_update(member,before,after):
 
 # --- Main ---
 
+
+    # --- Création automatique de squad via le salon trigger ---
+    if after.channel and after.channel.id == TEMP_VC_TRIGGER_ID:
+        trigger_name = after.channel.name.lower().replace("créer squad", "").strip()
+
+        # Extraire un nombre à la fin (ex: "valorant 3")
+        parts = trigger_name.split()
+        if parts and parts[-1].isdigit():
+            max_players = int(parts[-1])
+            game_name = " ".join(parts[:-1]).strip().title() or "Jeu inconnu"
+        else:
+            max_players = 5  # défaut
+            game_name = trigger_name.title() or "Jeu inconnu"
+
+        # Si le statut de jeu du membre est visible, le prioriser
+        if member.activity and member.activity.type.name == "playing":
+            game_name = member.activity.name
+
+        category = after.channel.guild.get_channel(SQUAD_VC_CATEGORY_ID)
+        if category:
+            suffix = random.randint(1000, 9999)
+            vc_name = f"{game_name} - Squad {member.display_name} ({suffix})"
+            vc = await after.channel.guild.create_voice_channel(
+                name=vc_name,
+                category=category,
+                user_limit=max_players
+            )
+
+            try:
+                await member.move_to(vc)
+            except:
+                pass
+
+            view = SquadJoinButton(vc, max_members=max_players)
+
+            embed = discord.Embed(
+                title=vc.name,
+                description=(
+                    f"🎮 Jeu : **{game_name}**\n"
+                    f"👥 Joueurs : 1 / {max_players}\n\n"
+                    f"👤 Membres :\n• {member.display_name}"
+                ),
+                color=discord.Color.green()
+            )
+
+            announce_ch = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
+            if announce_ch:
+                msg = await announce_ch.send(embed=embed, view=view)
+                view.message = msg
+                data.setdefault("active_squads", {})[str(vc.id)] = {
+                    "channel_id": announce_ch.id,
+                    "message_id": msg.id
+                }
+                save_data(data)
 def main():
     app=web.Application();app.router.add_post("/webhook",handle_webhook);app.router.add_get("/auth/twitch/callback",twitch_callback)
     r=web.AppRunner(app);loop=asyncio.get_event_loop();
