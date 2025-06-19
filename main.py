@@ -37,6 +37,7 @@ GUIDE_CHANNEL_ID = int(os.getenv("GUIDE_CHANNEL_ID", 0))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", 0))
 LOG_ARRIVANTS_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ARRIVANTS_CHANNEL_ID", 0))
 LOG_CHANNEL_UPDATE_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_UPDATE_CHANNEL_ID", 0))
+SQUAD_TEXT_CHANNEL_ID = int(os.getenv("SQUAD_TEXT_CHANNEL_ID", 0))
 
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
@@ -244,7 +245,7 @@ async def on_message_edit(before, after):
 @bot.event
 async def on_ready():
     print(f"✅ Connecté en tant que {bot.user}")
-    SQUAD_TEXT_CHANNEL_ID = int(os.getenv("SQUAD_TEXT_CHANNEL_ID", 0))
+    channel = bot.get_channel(SQUAD_TEXT_CHANNEL_ID)
     if channel:
         button = ui.Button(label="Créer un squad", style=discord.ButtonStyle.primary, custom_id="create_squad")
         view = ui.View()
