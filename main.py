@@ -475,9 +475,24 @@ async def on_voice_state_update(member,before,after):
 
     # --- Création automatique de squad via le salon trigger ---
     if after.channel and after.channel.id == TEMP_VC_TRIGGER_ID:
-        try:
-            await member.send("📝 Remplis ce formulaire pour créer ta squad 👇")
-            await member.send_modal(SquadSetupModal(member))
+        channel = member.guild.get_channel(GUIDE_CHANNEL_ID)  # Utilisé comme point d'entrée
+        if channel:
+            try:
+                class LaunchView(discord.ui.View):
+                    def __init__(self, m):
+                        super().__init__(timeout=60)
+                        self.member = m
+
+                    @discord.ui.button(label="Créer une squad", style=discord.ButtonStyle.green, custom_id="launch_modal")
+                    async def launch(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        if interaction.user.id != self.member.id:
+                            return await interaction.response.send_message("Ce bouton ne t'est pas destiné.", ephemeral=True)
+                        await interaction.response.send_modal(SquadSetupModal(self.member))
+
+                view = LaunchView(member)
+                await channel.send(f"{member.mention}, clique ci-dessous pour créer ta squad :", view=view, delete_after=60)
+            except Exception as e:
+                print(f"❌ Erreur lors de l'envoi du modal dans un salon : {e}")
         except:
             print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
 def main():
