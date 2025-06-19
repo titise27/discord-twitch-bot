@@ -422,6 +422,61 @@ async def twitter_check_loop():
 # --- Twitter & Twitch helper functions & classes omitted for brevity ---
 # (fetch_twitter_user_id, fetch_latest_tweets, TwitchMonitor, webhook handlers, etc.)
 
+# --- Webhook & OAuth HTTP ---
+async def handle_webhook(req):
+    try:
+        payload = await req.json()
+        logging.info(f"[Webhook] {payload}")
+        return web.Response(text="OK")
+    except Exception as e:
+        logging.error(f"[Webhook Error] {e}")
+        return web.Response(status=400, text=str(e))
+
+async def twitch_callback(req):
+    q = req.rel_url.query
+    code = q.get("code")
+    state = q.get("state")
+    if not code or not state:
+        return web.Response(status=400, text="Missing code or state")
+    # Échange du code contre un token
+    try:
+        token_resp = await ClientSession().post(
+            "https://id.twitch.tv/oauth2/token",
+            data={
+                "client_id": TWITCH_CLIENT_ID,
+                "client_secret": TWITCH_CLIENT_SECRET,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": os.getenv("REDIRECT_URI")
+            }
+        )
+        token_data = await token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise ValueError("No access_token in response")
+    except Exception as e:
+        logging.error(f"[Twitch OAuth Error] {e}")
+        return web.Response(status=400, text="OAuth token error")
+
+    # Récupérer l'utilisateur Twitch et lier le rôle
+    try:
+        headers = {"Authorization": f"Bearer {access_token}", "Client-Id": TWITCH_CLIENT_ID}
+        user_resp = await ClientSession().get("https://api.twitch.tv/helix/users", headers=headers)
+        user_data = (await user_resp.json())["data"][0]
+        guild = bot.guilds[0]
+        member_id = int(state)
+        member = await guild.fetch_member(member_id)
+        role = guild.get_role(TWITCH_FOLLOWER_ROLE_ID)
+        if member and role:
+            await member.add_roles(role)
+            data.setdefault("linked_accounts", {})[state] = user_data["login"]
+            save_data(data)
+            logging.info(f"[Twitch Linked] {member} -> {user_data['login']}")
+    except Exception as e:
+        logging.error(f"[Twitch Callback Error] {e}")
+
+    return web.Response(text="Linked")
+
 def main():
     app = web.Application()
     app.router.add_post("/webhook", handle_webhook)
