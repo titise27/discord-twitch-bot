@@ -261,6 +261,7 @@ async def on_message_edit(b,a):
 
 @bot.event
 async def on_ready():
+    cleanup_old_squads.start()
     bot.add_view(ReglementView(TWITCH_CLIENT_ID,os.getenv("REDIRECT_URI")))
     logging.info(f"Connecté: {bot.user}")
     await log_to_discord("✅ Bot prêt !")
@@ -474,57 +475,11 @@ async def on_voice_state_update(member,before,after):
 
     # --- Création automatique de squad via le salon trigger ---
     if after.channel and after.channel.id == TEMP_VC_TRIGGER_ID:
-        trigger_name = after.channel.name.lower().replace("créer squad", "").strip()
-
-        # Extraire un nombre à la fin (ex: "valorant 3")
-        parts = trigger_name.split()
-        if parts and parts[-1].isdigit():
-            max_players = int(parts[-1])
-            game_name = " ".join(parts[:-1]).strip().title() or "Jeu inconnu"
-        else:
-            max_players = 5  # défaut
-            game_name = trigger_name.title() or "Jeu inconnu"
-
-        # Si le statut de jeu du membre est visible, le prioriser
-        if member.activity and member.activity.type.name == "playing":
-            game_name = member.activity.name
-
-        category = after.channel.guild.get_channel(SQUAD_VC_CATEGORY_ID)
-        if category:
-            suffix = random.randint(1000, 9999)
-            vc_name = f"{game_name} - Squad {member.display_name} ({suffix})"
-            vc = await after.channel.guild.create_voice_channel(
-                name=vc_name,
-                category=category,
-                user_limit=max_players
-            )
-
-            try:
-                await member.move_to(vc)
-            except:
-                pass
-
-            view = SquadJoinButton(vc, max_members=max_players)
-
-            embed = discord.Embed(
-                title=vc.name,
-                description=(
-                    f"🎮 Jeu : **{game_name}**\n"
-                    f"👥 Joueurs : 1 / {max_players}\n\n"
-                    f"👤 Membres :\n• {member.display_name}"
-                ),
-                color=discord.Color.green()
-            )
-
-            announce_ch = bot.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
-            if announce_ch:
-                msg = await announce_ch.send(embed=embed, view=view)
-                view.message = msg
-                data.setdefault("active_squads", {})[str(vc.id)] = {
-                    "channel_id": announce_ch.id,
-                    "message_id": msg.id
-                }
-                save_data(data)
+        try:
+            await member.send("📝 Remplis ce formulaire pour créer ta squad 👇")
+            await member.send_modal(SquadSetupModal(member))
+        except:
+            print(f"❌ Impossible d'envoyer le modal à {member.display_name}")
 def main():
     app=web.Application();app.router.add_post("/webhook",handle_webhook);app.router.add_get("/auth/twitch/callback",twitch_callback)
     r=web.AppRunner(app);loop=asyncio.get_event_loop();
@@ -532,3 +487,107 @@ def main():
     loop.run_until_complete(bot.start(DISCORD_TOKEN))
 
 if __name__=="__main__": main()
+
+
+# --- Modal pour création de Squad personnalisée ---
+class SquadSetupModal(discord.ui.Modal, title="Créer une Squad"):
+    def __init__(self, member: discord.Member):
+        super().__init__()
+        self.member = member
+
+        self.game_name = discord.ui.TextInput(
+            label="Nom du jeu",
+            placeholder="Ex: Valorant, Rocket League...",
+            required=True,
+            max_length=50
+        )
+        self.max_players = discord.ui.TextInput(
+            label="Nombre de joueurs max",
+            placeholder="Ex: 3, 5, 10...",
+            required=True,
+            max_length=2
+        )
+
+        self.add_item(self.game_name)
+        self.add_item(self.max_players)
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        now_ts = time.time()
+        last_ts = user_squad_cooldowns.get(self.member.id, 0)
+        if now_ts - last_ts < 60:
+            return await interaction.response.send_message("⏳ Attends quelques secondes avant de recréer une squad.", ephemeral=True)
+        user_squad_cooldowns[self.member.id] = now_ts
+
+        try:
+            game_name = self.game_name.value.title()
+            max_players = int(self.max_players.value)
+        except:
+            return await interaction.response.send_message("Erreur dans les données fournies.", ephemeral=True)
+
+        guild = interaction.guild
+        category = guild.get_channel(SQUAD_VC_CATEGORY_ID)
+        if not category:
+            return await interaction.response.send_message("Catégorie introuvable.", ephemeral=True)
+
+        suffix = random.randint(1000, 9999)
+        vc_name = f"{game_name} - Squad {self.member.display_name} ({suffix})"
+        vc = await guild.create_voice_channel(
+            name=vc_name,
+            category=category,
+            user_limit=max_players
+        )
+
+        try:
+            await self.member.move_to(vc)
+        except:
+            pass
+
+        view = SquadJoinButton(vc, max_members=max_players)
+        embed = discord.Embed(
+            title=vc.name,
+            description=(
+                f"🎮 Jeu : **{game_name}**\n"
+                f"👥 Joueurs : 1 / {max_players}\n\n"
+                f"👤 Membres :\n• {self.member.display_name}"
+            ),
+            color=discord.Color.green()
+        )
+
+        announce_ch = interaction.client.get_channel(SQUAD_ANNOUNCE_CHANNEL_ID)
+        if announce_ch:
+            msg = await announce_ch.send(embed=embed, view=view)
+            view.message = msg
+            data.setdefault("active_squads", {})[str(vc.id)] = {
+                "channel_id": announce_ch.id,
+                "message_id": msg.id
+            }
+            save_data(data)
+
+        await interaction.response.send_message("✅ Squad créée avec succès !", ephemeral=True)
+
+
+
+# --- Protection anti-spam & timeout ---
+user_squad_cooldowns = {}  # user_id: timestamp
+
+@tasks.loop(seconds=60)
+async def cleanup_old_squads():
+    now = datetime.now(UTC)
+    g = bot.guilds[0] if bot.guilds else None
+    if not g:
+        return
+    for vc_id, info in list(data.get("active_squads", {}).items()):
+        vc = g.get_channel(int(vc_id))
+        if not vc or not vc.members:
+            try:
+                ch = bot.get_channel(info['channel_id'])
+                if ch:
+                    msg = await ch.fetch_message(info['message_id'])
+                    await msg.delete()
+                if vc:
+                    await vc.delete()
+            except:
+                pass
+            data["active_squads"].pop(vc_id, None)
+            save_data(data)
